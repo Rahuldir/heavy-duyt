@@ -39,7 +39,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. PARSER ENGINE (SUPPORTS BOTH PDF & URL) ---
+# --- 2. PARSER ENGINE (WITH STRICT CHRONOLOGICAL SORTING) ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -157,7 +157,8 @@ def process_lines(all_lines):
                     
     df = pd.DataFrame(ball_events)
     if not df.empty:
-        df = df.sort_values(['team', 'over_exact']).reset_index(drop=True)
+        # FIX: Sort ascending to ensure true chronological order per team innings
+        df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
     return df, match_title, playing_xi, team_names
 
 @st.cache_data
