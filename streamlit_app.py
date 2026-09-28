@@ -37,7 +37,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. ADVANCED PARSER WITH EXTRAS & DISMISSALS ---
+# --- 2. ADVANCED PARSER (MAJORITY VOTE ENGINE) ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -68,11 +68,11 @@ def robust_pdf_parser(uploaded_file):
             for p in parts[1].split(","):
                 c_name = clean_name(p)
                 if c_name: playing_xi[c_name] = team_name
-    if not team_names: team_names = ["Team 1", "Team 2"]
+    if not team_names: team_names = ["Team A", "Team B"]
 
-    ball_events = []
+    raw_ball_events = []
     current_over = -1.0
-    fallback_innings_counter = 1
+    current_inning_id = 1
     
     zone_mapping = {
         "extra cover": {"name": "Extra Cover", "angle": 315}, "cover": {"name": "Cover", "angle": 300}, 
@@ -89,7 +89,7 @@ def robust_pdf_parser(uploaded_file):
         if over_match:
             new_over = float(over_match.group(1))
             if current_over != -1.0 and new_over > current_over + 10.0:
-                fallback_innings_counter += 1
+                current_inning_id += 1
             current_over = new_over
             continue
             
@@ -104,7 +104,6 @@ def robust_pdf_parser(uploaded_file):
             bowler, batter = clean_name(raw_bowler), clean_name(raw_batter)
             if not bowler or not batter: continue
             
-            team_batting = playing_xi.get(batter, f"Innings {fallback_innings_counter}")
             runs, is_four, is_six, is_wicket = 0, 0, 0, 0
             is_wd, is_nb, is_b, is_lb = 0, 0, 0, 0
             zone, angle, dismissal_desc = "Unknown", None, "Not Out"
@@ -114,20 +113,17 @@ def robust_pdf_parser(uploaded_file):
                     zone, angle = mapped_data["name"], mapped_data["angle"]
                     break
 
-            # Parse Runs & Boundaries
             run_match = re.search(r"(\d+)\s+run", outcome_segment)
             if run_match: runs = int(run_match.group(1))
                 
             if "four" in outcome_segment or "4 run" in outcome_segment: is_four, runs = 1, 4
             elif "six" in outcome_segment or "6 run" in outcome_segment or "maximum" in outcome_segment: is_six, runs = 1, 6
             
-            # Parse Extras
             if "wide" in outcome_segment: is_wd = runs if runs > 0 else 1; runs = is_wd
             elif "no ball" in outcome_segment: is_nb = 1; runs = runs + 1 if runs > 0 else 1
             elif "leg bye" in outcome_segment: is_lb = runs if runs > 0 else 1; runs = is_lb
             elif "bye" in outcome_segment and "leg" not in outcome_segment: is_b = runs if runs > 0 else 1; runs = is_b
             
-            # Parse Wickets & Dismissal Text
             if "out" in outcome_segment or "thats out" in outcome_segment.replace("'", ""): 
                 is_wicket = 1
                 try:
@@ -135,12 +131,33 @@ def robust_pdf_parser(uploaded_file):
                 except:
                     dismissal_desc = f"b {bowler}"
 
-            ball_events.append({
-                "team": team_batting, "over_exact": current_over, "over_num": int(current_over) if current_over > 0 else 0,
+            raw_ball_events.append({
+                "inning_id": current_inning_id, "over_exact": current_over, "over_num": int(current_over) if current_over > 0 else 0,
                 "bowler": bowler, "batter": batter, "runs": runs, "wicket": is_wicket, "dismissal": dismissal_desc,
                 "is_wd": is_wd, "is_nb": is_nb, "is_b": is_b, "is_lb": is_lb,
                 "4s": is_four, "6s": is_six, "zone": zone, "angle": angle
             })
+            
+    # MAJORITY VOTE ENGINE: Assign True Team Names to Innings
+    inning_teams = {}
+    for inn in set([b['inning_id'] for b in raw_ball_events]):
+        team_votes = {}
+        for b in raw_ball_events:
+            if b['inning_id'] == inn:
+                t = playing_xi.get(b['batter'])
+                if t: team_votes[t] = team_votes.get(t, 0) + 1
+        
+        if team_votes:
+            inning_teams[inn] = max(team_votes, key=team_votes.get)
+        else:
+            idx = inn - 1
+            inning_teams[inn] = team_names[idx] if idx < len(team_names) else f"Team {inn}"
+
+    # Finalize DataFrame
+    ball_events = []
+    for b in raw_ball_events:
+        b['team'] = inning_teams[b['inning_id']]
+        ball_events.append(b)
                     
     df = pd.DataFrame(ball_events)
     if not df.empty:
@@ -220,34 +237,30 @@ if uploaded_pdf is not None:
     if not df.empty:
         st.markdown(f"### {match_title}")
         
-        teams = df['team'].unique().tolist()
+        teams = sorted(df['team'].unique().tolist())
         view_team = st.radio("Select View", ["Match Overview (Both)"] + teams, horizontal=True)
         display_df = df if view_team == "Match Overview (Both)" else df[df['team'] == view_team]
         
-        # Summary Row
         col1, col2, col3, col4 = st.columns(4)
         total_r = display_df["runs"].sum()
         total_b = len(display_df[display_df["is_wd"]==0])
         col1.markdown(f'<div class="metric-box"><div class="metric-title">Score</div><div class="metric-value">{total_r}/{display_df["wicket"].sum()}</div></div>', unsafe_allow_html=True)
         col2.markdown(f'<div class="metric-box"><div class="metric-title">Overs</div><div class="metric-value">{(total_b // 6) + (total_b % 6)/10}</div></div>', unsafe_allow_html=True)
         col3.markdown(f'<div class="metric-box"><div class="metric-title">Run Rate</div><div class="metric-value">{((total_r / (total_b / 6)) if total_b > 0 else 0):.2f}</div></div>', unsafe_allow_html=True)
-        col4.markdown(f'<div class="metric-box"><div class="metric-title">Boundaries</div><div class="metric-value">{display_df[display_df["4s"]==1].shape[0]} <span style="font-size:14px;color:#9ca3af;">(4s)</span> | {display_df[display_df["6s"]==1].shape[0]} <span style="font-size:14px;color:#9ca3af;">(6s)</span></div></div>', unsafe_allow_html=True)
+        col4.markdown(f'<div class="metric-box"><div class="metric-title">Boundaries</div><div class="metric-value">{display_df[display_df["runs"]==4].shape[0]} <span style="font-size:14px;color:#9ca3af;">(4s)</span> | {display_df[display_df["runs"]==6].shape[0]} <span style="font-size:14px;color:#9ca3af;">(6s)</span></div></div>', unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Main Navigation Tabs
         tab_scorecard, tab_dash, tab_squad = st.tabs(["📝 Match Scorecard", "📊 Pit-Wall Analytics", "👥 Squads & Playing XI"])
 
-        # TAB 1: FULL SCORECARD
+        # SCORECARD TAB
         with tab_scorecard:
             if view_team == "Match Overview (Both)":
                 st.warning("Select a specific Team from the radio buttons above to view the detailed scorecard.")
             else:
                 st.markdown(f'<div class="section-card"><h4 style="color:#10b981;">{view_team} Innings</h4>', unsafe_allow_html=True)
                 
-                # Batting Scorecard
                 batters_df = display_df.copy()
-                # Filter out extras from batter's balls and runs
                 batters_df['bat_runs'] = batters_df.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
                 batters_df['bat_balls'] = batters_df.apply(lambda x: 0 if x['is_wd'] else 1, axis=1)
                 
@@ -260,7 +273,6 @@ if uploaded_pdf is not None:
                 batting_stats.columns = ['Batter', ' ', 'R', 'B', '4s', '6s', 'SR']
                 st.dataframe(batting_stats, use_container_width=True, hide_index=True)
                 
-                # Extras & Total
                 wides = display_df['is_wd'].sum()
                 no_balls = display_df['is_nb'].sum()
                 leg_byes = display_df['is_lb'].sum()
@@ -268,9 +280,8 @@ if uploaded_pdf is not None:
                 total_extras = wides + no_balls + leg_byes + byes
                 
                 st.markdown(f"**Extras:** {total_extras} (b {byes}, lb {leg_byes}, w {wides}, nb {no_balls})")
-                st.markdown(f"**Total:** {total_r}-{display_df['wicket'].sum()} ({(total_b // 6)}.{total_b % 6} Overs, RR: {((total_r / (total_b / 6)) if total_b > 0 else 0):.2f})")
+                st.markdown(f"**Total:** {total_r}-{display_df['wicket'].sum()} ({(total_b // 6)}.{total_b % 6} Overs)")
                 
-                # Did Not Bat
                 if playing_xi:
                     team_roster = [p for p, t in playing_xi.items() if t == view_team]
                     batted_players = batting_stats['Batter'].tolist()
@@ -279,15 +290,13 @@ if uploaded_pdf is not None:
                         st.markdown(f"**Did not Bat:** {', '.join(did_not_bat)}")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
-                
-                # Bowling Scorecard
                 st.markdown(f'<h4>Bowling</h4>', unsafe_allow_html=True)
-                # Calculate Maidens
+
                 overs_grouped = display_df.groupby(['bowler', 'over_num'])['runs'].sum().reset_index()
                 maidens_calc = overs_grouped[overs_grouped['runs'] == 0].groupby('bowler').size().reset_index(name='M')
                 
                 bowling_stats = display_df.groupby("bowler").agg(
-                    Total_Balls=("is_wd", lambda x: (x==0).sum()), # Balls excluding wides
+                    Total_Balls=("is_wd", lambda x: (x==0).sum()), 
                     R=("runs", "sum"), W=("wicket", "sum"), NB=("is_nb", "sum"), WD=("is_wd", "sum")
                 ).reset_index()
                 
@@ -300,7 +309,7 @@ if uploaded_pdf is not None:
                 st.dataframe(bowling_stats, use_container_width=True, hide_index=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # TAB 2: ANALYTICS DASHBOARD
+        # ANALYTICS TAB
         with tab_dash:
             c_left, c_right = st.columns([2, 1])
             with c_left:
@@ -338,7 +347,7 @@ if uploaded_pdf is not None:
                     """, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # TAB 3: SQUADS
+        # SQUADS TAB
         with tab_squad:
             st.markdown('<div class="section-card">', unsafe_allow_html=True)
             if len(team_names) >= 2:
