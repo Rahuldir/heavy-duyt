@@ -30,7 +30,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. ADVANCED PARSER (STRICT BALL DETECTION & TEAM NAMING) ---
+# --- 2. ADVANCED PARSER (STRICT INNINGS SPLIT & TEAM NAMES) ---
 def clean_name(name):
     clean = re.sub(r'[^A-Za-z\s\-]', '', str(name)).strip()
     return clean if 2 < len(clean) < 25 else None
@@ -38,8 +38,9 @@ def clean_name(name):
 @st.cache_data
 def robust_pdf_parser(uploaded_file):
     ball_events = []
-    current_over = 0.0
+    current_over = -1.0
     current_innings = 1
+    team_a, team_b = "Team 1", "Team 2"
     match_title = "Match Overview"
     
     zone_mapping = {
@@ -59,37 +60,40 @@ def robust_pdf_parser(uploaded_file):
             
             lines = text.split("\n")
             
-            # Attempt to extract team names from page 1 header
+            # Extract actual team names from the PDF header
             if page_num == 0:
-                for line in lines[:15]:
+                for line in lines[:10]:
                     title_match = re.search(r"([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+),", line)
                     if title_match:
-                        match_title = f"{title_match.group(1).strip()} vs {title_match.group(2).strip()}"
+                        team_a = title_match.group(1).strip()
+                        team_b = title_match.group(2).strip()
+                        match_title = f"{team_a} vs {team_b}"
                         break
 
             for line in lines:
                 line = line.strip()
                 if not line: continue
                 
-                # Update current over if a standalone number is found
+                # Update current over & mathematically detect innings switch
                 over_match = re.match(r"^(\d+\.[1-6])$", line)
                 if over_match:
                     new_over = float(over_match.group(1))
-                    if current_over > 10.0 and new_over < 5.0:  # Detect innings switch
+                    
+                    # If the over jumps by more than 15 (e.g. from 0.1 to 41.2 in reverse order), it's a new innings!
+                    if current_over != -1.0 and abs(new_over - current_over) > 15.0:
                         current_innings += 1
+                        
                     current_over = new_over
                     continue
                     
                 # Strict Ball Event Match
                 ball_match = re.search(r"^([^,]+)\s+to\s+([^,]+),\s+(.*)", line)
                 if ball_match:
-                    raw_bowler = ball_match.group(1).strip()
-                    raw_batter = ball_match.group(2).strip()
-                    desc = ball_match.group(3).strip()
+                    raw_bowler, raw_batter, desc = ball_match.groups()
                     desc_lower = desc.lower()
-                    
-                    # Prevent junk parsing: Check if description contains valid cricket outcomes
                     val_str = desc_lower[:35]
+                    
+                    # Validate actual cricket action
                     if not any(k in val_str for k in ['run', 'four', 'six', 'maximum', 'out', 'wide', 'no ball', 'bye']):
                         continue
                         
@@ -106,25 +110,22 @@ def robust_pdf_parser(uploaded_file):
                             angle = mapped_data["angle"]
                             break
 
-                    if "4 run" in val_str or "four" in val_str:
-                        is_four, runs = 1, 4
-                    elif "6 run" in val_str or "six" in val_str or "maximum" in val_str:
-                        is_six, runs = 1, 6
-                    elif "wide" in val_str or "no ball" in val_str or "leg bye" in val_str or "bye" in val_str:
-                        is_extra, runs = 1, 1
+                    if "4 run" in val_str or "four" in val_str: is_four, runs = 1, 4
+                    elif "6 run" in val_str or "six" in val_str or "maximum" in val_str: is_six, runs = 1, 6
+                    elif "wide" in val_str or "no ball" in val_str or "leg bye" in val_str or "bye" in val_str: is_extra, runs = 1, 1
                         
-                    if any(w in val_str for w in ["out", "caught", "bowled", "lbw", "stumped", "run out"]):
-                        is_wicket = 1
+                    if any(w in val_str for w in ["out", "caught", "bowled", "lbw", "stumped", "run out"]): is_wicket = 1
 
                     if not is_four and not is_six and not is_extra:
                         run_match = re.search(r"(\d+)\s+run", val_str)
                         if run_match: runs = int(run_match.group(1))
                             
-                    if runs == 0 and not is_extra and not is_wicket:
-                        is_dot = 1
+                    if runs == 0 and not is_extra and not is_wicket: is_dot = 1
+
+                    innings_label = f"Innings {current_innings}"
 
                     ball_events.append({
-                        "innings": f"Innings {current_innings}",
+                        "innings": innings_label,
                         "over_exact": current_over,
                         "over_num": int(current_over) if current_over > 0 else 0,
                         "bowler": bowler,
@@ -140,7 +141,7 @@ def robust_pdf_parser(uploaded_file):
                         "description": desc,
                     })
                     
-    return pd.DataFrame(ball_events), match_title
+    return pd.DataFrame(ball_events), match_title, team_a, team_b
 
 # --- 3. WAGON WHEEL ROPES GENERATOR ---
 def draw_wagon_wheel(df_boundaries, title):
@@ -180,23 +181,26 @@ st.markdown('<h1><span class="live-dot"></span> CRIC-F1 // PIT-WALL ANALYTICS</h
 
 if uploaded_pdf is not None:
     with st.spinner("EXTRACTING TELEMETRY..."):
-        df, match_title = robust_pdf_parser(uploaded_pdf)
+        df, match_title, team_a, team_b = robust_pdf_parser(uploaded_pdf)
 
-    st.markdown(f"_{match_title} | High-performance spatial tracking._")
+    st.markdown(f"_{match_title} | Synchronizing Innings Data._")
     st.markdown("---")
 
     if not df.empty:
         innings_list = df['innings'].unique().tolist()
-        selected_inning = st.radio("Select Telemetry View:", innings_list + ["Compare Both Innings"], horizontal=True)
         
-        display_df = df if selected_inning == "Compare Both Innings" else df[df['innings'] == selected_inning].copy()
+        # Interactive Toggle for Teams
+        selected_inning = st.radio("Select Telemetry View:", innings_list + ["Compare Match Overview"], horizontal=True)
+        
+        display_df = df if selected_inning == "Compare Match Overview" else df[df['innings'] == selected_inning].copy()
 
         total_runs = display_df["runs"].sum()
         total_balls = len(display_df[display_df['extra'] == 0])
         current_rr = (total_runs / (total_balls / 6)) if total_balls > 0 else 0
 
+        # Dynamic Top Row Metrics
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.markdown(f'<div class="f1-card"><div class="f1-metric-title">Score</div><div class="f1-metric-value">{total_runs}/{display_df["wicket"].sum()}</div></div>', unsafe_allow_html=True)
+        c1.markdown(f'<div class="f1-card"><div class="f1-metric-title">Score ({selected_inning})</div><div class="f1-metric-value">{total_runs}/{display_df["wicket"].sum()}</div></div>', unsafe_allow_html=True)
         c2.markdown(f'<div class="f1-card"><div class="f1-metric-title">Run Rate</div><div class="f1-metric-value">{current_rr:.2f}</div></div>', unsafe_allow_html=True)
         c3.markdown(f'<div class="f1-card"><div class="f1-metric-title">Overs</div><div class="f1-metric-value">{(total_balls // 6) + (total_balls % 6)/10}</div></div>', unsafe_allow_html=True)
         c4.markdown(f'<div class="f1-card"><div class="f1-metric-title">Boundaries</div><div class="f1-metric-value">{display_df["4s"].sum()} <span style="font-size:14px;color:#8792a3;">(4s)</span> | {display_df["6s"].sum()} <span style="font-size:14px;color:#8792a3;">(6s)</span></div></div>', unsafe_allow_html=True)
@@ -205,28 +209,29 @@ if uploaded_pdf is not None:
         tab1, tab2, tab3 = st.tabs(["📊 Full Scorecards", "🏙️ Manhattan & Wagon Wheel", "👤 Player Deep-Dive"])
 
         with tab1:
-            st.subheader(f"🏏 Batting Scorecard - {selected_inning}")
-            
-            # Determine Out / Not Out status
-            dismissed_batters = df[df['wicket'] == 1]['batter'].unique().tolist()
-            
-            batting = display_df.groupby("batter").agg(Runs=("runs", "sum"), Balls=("runs", "count"), Fours=("4s", "sum"), Sixes=("6s", "sum")).reset_index()
-            batting['Status'] = batting['batter'].apply(lambda x: "Out" if x in dismissed_batters else "Not Out")
-            batting['Strike Rate'] = ((batting['Runs'] / batting['Balls']) * 100).round(2)
-            batting = batting.sort_values(by="Runs", ascending=False)
-            st.dataframe(batting[['batter', 'Status', 'Runs', 'Balls', 'Fours', 'Sixes', 'Strike Rate']], use_container_width=True, hide_index=True)
-            
-            st.subheader(f"🎯 Bowling Scorecard - {selected_inning}")
-            bowling = display_df.groupby("bowler").agg(Balls=("over_exact", "count"), Wickets=("wicket", "sum"), Conceded=("runs", "sum")).reset_index().sort_values(by="Wickets", ascending=False)
-            bowling['Overs'] = (bowling['Balls'] // 6) + (bowling['Balls'] % 6) / 10
-            bowling['Economy'] = (bowling['Conceded'] / (bowling['Balls'] / 6)).round(2)
-            st.dataframe(bowling[['bowler', 'Overs', 'Conceded', 'Wickets', 'Economy']], use_container_width=True, hide_index=True)
+            if selected_inning == "Compare Match Overview":
+                st.warning("Please select a specific Innings from the toggle above to view the detailed scorecard.")
+            else:
+                st.subheader(f"🏏 Batting Scorecard - {selected_inning}")
+                dismissed_batters = display_df[display_df['wicket'] == 1]['batter'].unique().tolist()
+                
+                batting = display_df.groupby("batter").agg(Runs=("runs", "sum"), Balls=("runs", "count"), Fours=("4s", "sum"), Sixes=("6s", "sum")).reset_index()
+                batting['Status'] = batting['batter'].apply(lambda x: "Out" if x in dismissed_batters else "Not Out")
+                batting['Strike Rate'] = ((batting['Runs'] / batting['Balls']) * 100).round(2)
+                batting = batting.sort_values(by="Runs", ascending=False)
+                st.dataframe(batting[['batter', 'Status', 'Runs', 'Balls', 'Fours', 'Sixes', 'Strike Rate']], use_container_width=True, hide_index=True)
+                
+                st.subheader(f"🎯 Bowling Scorecard - {selected_inning}")
+                bowling = display_df.groupby("bowler").agg(Balls=("over_exact", "count"), Wickets=("wicket", "sum"), Conceded=("runs", "sum")).reset_index().sort_values(by="Wickets", ascending=False)
+                bowling['Overs'] = (bowling['Balls'] // 6) + (bowling['Balls'] % 6) / 10
+                bowling['Economy'] = (bowling['Conceded'] / (bowling['Balls'] / 6)).round(2)
+                st.dataframe(bowling[['bowler', 'Overs', 'Conceded', 'Wickets', 'Economy']], use_container_width=True, hide_index=True)
 
         with tab2:
             col_m, col_w = st.columns(2)
             with col_m:
                 st.subheader("🏙️ Manhattan (Runs per Over)")
-                if selected_inning == "Compare Both Innings":
+                if selected_inning == "Compare Match Overview":
                     manhattan = display_df.groupby(['over_num', 'innings'])['runs'].sum().reset_index()
                     fig_man = px.bar(manhattan, x='over_num', y='runs', color='innings', barmode='group', template="plotly_dark", color_discrete_sequence=['#e10600', '#3182ce'])
                 else:
@@ -245,7 +250,7 @@ if uploaded_pdf is not None:
                     st.info("No spatial boundary data detected for this view.")
 
         with tab3:
-            st.subheader("🔍 Deep-Dive Player Analytics")
+            st.subheader("🔍 Player Telemetry & Wagon Wheel")
             valid_players = sorted(list(set(display_df["batter"]).union(set(display_df["bowler"]))))
             selected_player = st.selectbox("Select Player:", valid_players)
             
