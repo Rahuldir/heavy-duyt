@@ -81,14 +81,13 @@ def process_lines(all_lines):
     noise_keywords = ['reserved', 'times of india', 'navbharat', 'ask ai', 'platforms', 'cookie', 'privacy', 'subscribe']
 
     for line in all_lines:
-        # Ignore website boilerplate/ads
         if any(noise in line.lower() for noise in noise_keywords):
             continue
 
         over_match = re.match(r"^(\d{1,2}\.\d{1,2})$", line)
         if over_match:
             new_over = float(over_match.group(1))
-            if new_over > 50.0: continue # Cap at 50 overs
+            if new_over > 50.0: continue
             if last_over != -1.0 and new_over > last_over + 10.0:
                 current_inning_id += 1
             current_over = new_over
@@ -163,9 +162,25 @@ def process_lines(all_lines):
     df = pd.DataFrame(ball_events)
     if not df.empty:
         df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
-        # Strict cap: Max 10 wickets per innings
+        
+        # STRICT DEDUPLICATION: Ensure a batter can only be marked out ONCE per team innings
+        out_batters = set()
+        clean_wickets = []
+        for idx, row in df.iterrows():
+            if row['wicket'] == 1:
+                if row['batter'] in out_batters:
+                    clean_wickets.append(0) # Duplicate dismissal mention, ignore
+                else:
+                    out_batters.add(row['batter'])
+                    clean_wickets.append(1)
+            else:
+                clean_wickets.append(0)
+        df['wicket'] = clean_wickets
+        
+        # Hard cap: Max 10 wickets per innings
         df['cumulative_wickets'] = df.groupby('team')['wicket'].cumsum()
         df = df[df['cumulative_wickets'] <= 10]
+        
     return df, match_title, playing_xi, team_names
 
 @st.cache_data
@@ -342,8 +357,15 @@ if not df.empty:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            st.markdown('<div class="section-card"><h4>Wagon Wheel</h4>', unsafe_allow_html=True)
+            st.markdown('<div class="section-card"><h4>Wagon Wheel & Shot %</h4>', unsafe_allow_html=True)
             st.plotly_chart(draw_zone_wagon_wheel(display_df), use_container_width=True)
+            
+            zone_pct = display_df[display_df['zone'] != 'Unknown']['zone'].value_counts(normalize=True).mul(100).round(1).reset_index()
+            zone_pct.columns = ['Zone', 'Percentage (%)']
+            if not zone_pct.empty:
+                fig_donut = px.pie(zone_pct, names='Zone', values='Percentage (%)', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.sequential.Tealgrn_r)
+                fig_donut.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='#111827', plot_bgcolor='#111827')
+                st.plotly_chart(fig_donut, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-card"><h4>Partnerships</h4>', unsafe_allow_html=True)
