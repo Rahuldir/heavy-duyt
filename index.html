@@ -3,40 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Cricket Simulation - Live Broadcast</title>
+    <title>Humanized 3D Cricket - WebAssembly Physics</title>
     <style>
-        body, html { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #050510; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body, html { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #020208; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         canvas { width: 100%; height: 100%; outline: none; touch-action: none; }
         
         #broadcast-hud {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             background: linear-gradient(135deg, rgba(10,10,30,0.95) 0%, rgba(30,30,80,0.95) 100%);
-            color: white; border-radius: 8px; border-bottom: 5px solid #ff0044;
-            display: flex; align-items: center; padding: 10px 30px;
+            color: white; border-radius: 8px; border-bottom: 5px solid #00ffcc;
+            display: flex; align-items: center; padding: 12px 35px;
             box-shadow: 0 15px 40px rgba(0,0,0,0.8); z-index: 100; pointer-events: none;
-            width: 650px; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1);
+            width: 680px; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1);
         }
-        .team-score { font-size: 32px; display: flex; align-items: center; gap: 12px; font-weight: 900; font-family: 'Impact', sans-serif; letter-spacing: 2px; }
+        .team-score { font-size: 34px; display: flex; align-items: center; gap: 12px; font-weight: 900; font-family: 'Impact', sans-serif; letter-spacing: 2px; }
         .team-red { color: #ff3333; }
         .team-yellow { color: #ffcc00; }
         .match-info { text-align: center; font-size: 13px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; line-height: 1.4;}
         
         #director-cam {
-            position: absolute; top: 20px; right: 20px; background: rgba(220, 0, 0, 0.9);
-            color: white; padding: 6px 14px; font-weight: bold; border-radius: 4px; z-index: 100; font-size: 12px; letter-spacing: 2px;
+            position: absolute; top: 20px; right: 20px; background: rgba(0, 255, 204, 0.9);
+            color: #000; padding: 6px 14px; font-weight: 900; border-radius: 4px; z-index: 100; font-size: 12px; letter-spacing: 2px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; pointer-events: none;
         }
     </style>
-    <!-- Babylon.js CDN Engine -->
+    <!-- Babylon.js & Rapier WASM Physics Engine -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.11.2/rapier.js"></script>
 </head>
 <body>
 
-    <div id="director-cam">CAM: TACTICAL WIDE</div>
+    <div id="director-cam">CAM: HUMANIZED KINEMATICS</div>
     
     <div id="broadcast-hud">
-        <div class="team-score"><span style="color:#aaa; font-size:20px;">IND</span> <span class="team-red">284/5</span></div>
-        <div class="match-info" id="commentary">Overs: 47.1 | CRR: 6.02<br><b style="color:#fff; font-size:15px;">Simulating live match action...</b></div>
+        <div class="team-score"><span style="color:#aaa; font-size:20px;">IND</span> <span class="team-red">310/4</span></div>
+        <div class="match-info" id="commentary">Overs: 49.1 | CRR: 6.31<br><b style="color:#fff; font-size:15px;">Organic Motion Engine Active</b></div>
         <div class="team-score"><span class="team-yellow">AUS</span></div>
     </div>
 
@@ -46,40 +47,40 @@
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
 
-        const createScene = function () {
+        const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
-            scene.clearColor = new BABYLON.Color4(0.35, 0.65, 0.9, 1);
+            scene.clearColor = new BABYLON.Color4(0.25, 0.55, 0.85, 1);
             scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
-            scene.fogColor = new BABYLON.Color3(0.35, 0.65, 0.9);
-            scene.fogDensity = 0.002;
+            scene.fogColor = new BABYLON.Color3(0.25, 0.55, 0.85);
+            scene.fogDensity = 0.0018;
 
             // Camera Setup
-            const camera = new BABYLON.UniversalCamera("Cam", new BABYLON.Vector3(0, 5, -25), scene);
+            const camera = new BABYLON.UniversalCamera("Cam", new BABYLON.Vector3(0, 4, -22), scene);
             camera.setTarget(new BABYLON.Vector3(0, 1, 9));
 
-            // Lighting
+            // Cinematic Lighting
             const ambient = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
-            ambient.intensity = 0.6;
+            ambient.intensity = 0.7;
 
-            const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-0.5, -1, 0.5), scene);
-            sun.position = new BABYLON.Vector3(50, 100, -50);
-            sun.intensity = 1.3;
+            const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-0.4, -1, 0.6), scene);
+            sun.position = new BABYLON.Vector3(60, 120, -60);
+            sun.intensity = 1.4;
 
             const shadowGen = new BABYLON.ShadowGenerator(2048, sun);
             shadowGen.useBlurExponentialShadowMap = true;
             shadowGen.blurKernel = 32;
 
-            // Turf & Pitch
+            // Turf Generation
             const grassTex = new BABYLON.DynamicTexture("grass", {width: 512, height: 512}, scene, false);
             const ctx = grassTex.getContext();
             for (let i = 0; i < 16; i++) {
-                ctx.fillStyle = i % 2 === 0 ? '#3f9b2d' : '#378827';
+                ctx.fillStyle = i % 2 === 0 ? '#388e28' : '#338024';
                 ctx.fillRect(i * 32, 0, 32, 512);
             }
             grassTex.update();
             grassTex.uScale = 20; grassTex.vScale = 20;
 
-            const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 300, height: 300}, scene);
+            const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 350, height: 350}, scene);
             ground.material = new BABYLON.StandardMaterial("gMat", scene);
             ground.material.diffuseTexture = grassTex;
             ground.receiveShadows = true;
@@ -108,53 +109,68 @@
             }
             buildStumps(10.06); buildStumps(-10.06);
 
-            // Character Materials
+            // --- Organic Humanized Character Builder ---
             const redMat = new BABYLON.StandardMaterial("red", scene); redMat.diffuseColor = new BABYLON.Color3(0.85, 0.1, 0.1);
             const yelMat = new BABYLON.StandardMaterial("yel", scene); yelMat.diffuseColor = new BABYLON.Color3(0.95, 0.8, 0.1);
-            const skinMat = new BABYLON.StandardMaterial("skin", scene); skinMat.diffuseColor = new BABYLON.Color3(0.8, 0.6, 0.4);
-            const pantMat = new BABYLON.StandardMaterial("pant", scene); pantMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.15);
-            const batMat = new BABYLON.StandardMaterial("bat", scene); batMat.diffuseColor = new BABYLON.Color3(0.8, 0.6, 0.3);
+            const skinMat = new BABYLON.StandardMaterial("skin", scene); skinMat.diffuseColor = new BABYLON.Color3(0.78, 0.58, 0.42);
+            const pantMat = new BABYLON.StandardMaterial("pant", scene); pantMat.diffuseColor = new BABYLON.Color3(0.12, 0.12, 0.18);
+            const batMat = new BABYLON.StandardMaterial("bat", scene); batMat.diffuseColor = new BABYLON.Color3(0.75, 0.55, 0.3);
 
-            function createPlayer(shirtMat, isBatsman) {
+            function createHumanoid(shirtMat, isBatsman) {
                 const root = new BABYLON.TransformNode("root", scene);
-                const torso = BABYLON.MeshBuilder.CreateBox("torso", {width: 0.45, height: 0.6, depth: 0.25}, scene);
-                torso.parent = root; torso.position.y = 1.05; torso.material = shirtMat; shadowGen.addShadowCaster(torso);
+                
+                // Soft-tissue spine flex node
+                const spine = new BABYLON.TransformNode("spine", scene);
+                spine.parent = root; spine.position.y = 0.8;
 
-                const head = BABYLON.MeshBuilder.CreateBox("head", {width: 0.22, height: 0.25, depth: 0.22}, scene);
-                head.parent = torso; head.position.y = 0.45; head.material = isBatsman ? shirtMat : skinMat; shadowGen.addShadowCaster(head);
+                const torso = BABYLON.MeshBuilder.CreateBox("torso", {width: 0.42, height: 0.55, depth: 0.22}, scene);
+                torso.parent = spine; torso.position.y = 0.25; torso.material = shirtMat; shadowGen.addShadowCaster(torso);
 
-                function addLimb(x, y, w, l, isArm) {
+                const head = BABYLON.MeshBuilder.CreateSphere("head", {diameter: 0.24, segments: 16}, scene);
+                head.parent = torso; head.position.y = 0.42; head.scaling.z = 1.2;
+                head.material = isBatsman ? shirtMat : skinMat; shadowGen.addShadowCaster(head);
+
+                function addSegmentedLimb(x, y, w, l, isArm) {
                     const piv = new BABYLON.TransformNode("piv", scene);
                     piv.parent = torso; piv.position = new BABYLON.Vector3(x, y, 0);
-                    const m = BABYLON.MeshBuilder.CreateBox("m", {width: w, height: l, depth: w}, scene);
-                    m.parent = piv; m.position.y = -l/2; m.material = isArm ? skinMat : pantMat; shadowGen.addShadowCaster(m);
-                    return piv;
+                    
+                    const upper = BABYLON.MeshBuilder.CreateBox("upper", {width: w, height: l/2, depth: w}, scene);
+                    upper.parent = piv; upper.position.y = -l/4; upper.material = isArm ? shirtMat : pantMat; shadowGen.addShadowCaster(upper);
+
+                    const lowerPiv = new BABYLON.TransformNode("lowerPiv", scene);
+                    lowerPiv.parent = upper; lowerPiv.position.y = -l/2;
+                    
+                    const lower = BABYLON.MeshBuilder.CreateBox("lower", {width: w*0.85, height: l/2, depth: w*0.85}, scene);
+                    lower.parent = lowerPiv; lower.position.y = -l/4; lower.material = isArm ? skinMat : pantMat; shadowGen.addShadowCaster(lower);
+
+                    return { piv, lowerPiv };
                 }
 
-                const lArm = addLimb(-0.3, 0.25, 0.12, 0.6, true);
-                const rArm = addLimb(0.3, 0.25, 0.12, 0.6, true);
-                const lLeg = addLimb(-0.13, -0.3, 0.16, 0.65, false);
-                const rLeg = addLimb(0.13, -0.3, 0.16, 0.65, false);
+                const lArm = addSegmentedLimb(-0.28, 0.2, 0.1, 0.6, true);
+                const rArm = addSegmentedLimb(0.28, 0.2, 0.1, 0.6, true);
+                const lLeg = addSegmentedLimb(-0.12, -0.3, 0.14, 0.7, false);
+                const rLeg = addSegmentedLimb(0.12, -0.3, 0.14, 0.7, false);
 
                 let bat = null;
                 if (isBatsman) {
-                    bat = BABYLON.MeshBuilder.CreateBox("bat", {width: 0.1, height: 0.85, depth: 0.03}, scene);
-                    bat.parent = rArm; bat.position = new BABYLON.Vector3(0, -0.7, 0.1); bat.material = batMat; shadowGen.addShadowCaster(bat);
+                    bat = BABYLON.MeshBuilder.CreateBox("bat", {width: 0.09, height: 0.85, depth: 0.03}, scene);
+                    bat.parent = rArm.lowerPiv; bat.position = new BABYLON.Vector3(0, -0.5, 0.1); bat.material = batMat; shadowGen.addShadowCaster(bat);
                     torso.rotation.y = -Math.PI / 2.2;
-                    lArm.rotation.x = -Math.PI / 4; rArm.rotation.x = -Math.PI / 3;
+                    lArm.piv.rotation.x = -Math.PI / 4; lArm.piv.rotation.z = 0.3;
+                    rArm.piv.rotation.x = -Math.PI / 3;
                 }
-                return { root, torso, lArm, rArm, lLeg, rLeg, bat, dist: 0 };
+                return { root, spine, torso, lArm, rArm, lLeg, rLeg, bat, dist: 0 };
             }
 
-            const bowler = createPlayer(redMat, false);
+            const bowler = createHumanoid(redMat, false);
             bowler.root.position = new BABYLON.Vector3(1.5, 0, -25);
 
-            const striker = createPlayer(yelMat, true);
+            const striker = createHumanoid(yelMat, true);
             striker.root.position = new BABYLON.Vector3(0, 0, 8.84);
 
             const fielders = [];
             for(let i=0; i<8; i++) {
-                const f = createPlayer(redMat, false);
+                const f = createHumanoid(redMat, false);
                 const angle = (i / 8) * Math.PI * 2;
                 f.root.position = new BABYLON.Vector3(Math.cos(angle)*35, 0, Math.sin(angle)*35);
                 f.root.lookAt(new BABYLON.Vector3(0,0,10));
@@ -166,39 +182,56 @@
             ball.material.diffuseColor = new BABYLON.Color3(1, 1, 1);
             ball.position.y = -10; shadowGen.addShadowCaster(ball);
 
-            // Simulation Logic
+            // Simulation Loop Logic
             let state = 0; 
             let timer = 0;
             let ballVel = new BABYLON.Vector3();
             const commEl = document.getElementById('commentary');
             const dirEl = document.getElementById('director-cam');
 
-            function animateLegs(char, speed, dt) {
+            function humanizeMovement(char, speed, dt) {
                 char.dist += speed * dt;
-                const p = char.dist * 3;
-                char.lLeg.rotation.x = Math.sin(p) * 0.7;
-                char.rLeg.rotation.x = Math.sin(p + Math.PI) * 0.7;
+                const p = char.dist * 3.5;
+                // Organic spring-like articulation
+                char.lLeg.piv.rotation.x = Math.sin(p) * 0.8;
+                char.lLeg.lowerPiv.rotation.x = Math.max(0, Math.sin(p)) * 0.6; // Knee bend constraint
+                
+                char.rLeg.piv.rotation.x = Math.sin(p + Math.PI) * 0.8;
+                char.rLeg.lowerPiv.rotation.x = Math.max(0, Math.sin(p + Math.PI)) * 0.6;
+                
                 if(!char.bat) {
-                    char.lArm.rotation.x = Math.sin(p + Math.PI) * 0.6;
-                    char.rArm.rotation.x = Math.sin(p) * 0.6;
+                    char.lArm.piv.rotation.x = Math.sin(p + Math.PI) * 0.6;
+                    char.rArm.piv.rotation.x = Math.sin(p) * 0.6;
                 }
+            }
+
+            function resetMatch() {
+                bowler.root.position.set(1.5, 0, -25);
+                bowler.rArm.piv.rotation.x = 0; bowler.torso.rotation.x = 0;
+                ball.position.y = -10;
+                state = 0; timer = 0;
+                commEl.innerHTML = "Overs: 49.1 | CRR: 6.31<br><b style='color:#fff'>Bowler taking his run-up...</b>";
             }
 
             scene.onBeforeRenderObservable.add(() => {
                 const dt = engine.getDeltaTime() / 1000;
+                const time = performance.now() * 0.003;
 
-                // Director Camera Angles
+                // Subtle organic idle breathing for batsman weight distribution
+                striker.spine.rotation.x = Math.sin(time * 3) * 0.03;
+
+                // Director Camera Switching
                 if (state === 0 || state === 1) {
-                    dirEl.innerText = "CAM: UMPIRE HIGH";
-                    camera.position = BABYLON.Vector3.Lerp(camera.position, new BABYLON.Vector3(0, 4, -20), 0.05);
+                    dirEl.innerText = "CAM: BROADCAST STUMP";
+                    camera.position = BABYLON.Vector3.Lerp(camera.position, new BABYLON.Vector3(0, 3.5, -18), 0.05);
                     camera.setTarget(BABYLON.Vector3.Lerp(camera.getTarget(), new BABYLON.Vector3(0, 1, 9), 0.05));
                 } else if (state === 2) {
-                    dirEl.innerText = "CAM: TRACKING";
-                    camera.position = BABYLON.Vector3.Lerp(camera.position, new BABYLON.Vector3(-10, 3, 0), 0.08);
+                    dirEl.innerText = "CAM: HAWK-EYE TRACKER";
+                    camera.position = BABYLON.Vector3.Lerp(camera.position, new BABYLON.Vector3(-12, 3, 2), 0.08);
                     camera.setTarget(ball.position);
                 } else if (state === 3) {
                     dirEl.innerText = "CAM: BOUNDARY CHASE";
-                    camera.position = BABYLON.Vector3.Lerp(camera.position, ball.position.clone().add(new BABYLON.Vector3(12, 6, 12)), 0.05);
+                    camera.position = BABYLON.Vector3.Lerp(camera.position, ball.position.clone().add(new BABYLON.Vector3(12, 5, 12)), 0.05);
                     camera.setTarget(ball.position);
                 }
 
@@ -206,16 +239,20 @@
                 if (state === 0) {
                     const spd = 7.5;
                     bowler.root.position.z += spd * dt;
-                    animateLegs(bowler, spd, dt);
+                    humanizeMovement(bowler, spd, dt);
+                    bowler.torso.position.y = 1.05 + Math.abs(Math.sin(bowler.dist * 4)) * 0.08;
+
                     if (bowler.root.position.z >= -10.5) { state = 1; timer = 0; }
                 }
                 else if (state === 1) {
-                    timer += dt * 15;
-                    bowler.rArm.rotation.x = -timer;
+                    timer += dt * 14;
+                    bowler.rArm.piv.rotation.x = -timer;
+                    bowler.torso.rotation.x = 0.4; // Upper body crunch during delivery stride
+                    
                     if (timer > Math.PI * 0.8) {
                         state = 2;
-                        ball.position.set(bowler.root.position.x - 0.4, 2.2, bowler.root.position.z + 1);
-                        ballVel.set((Math.random()-0.5)*1.5, -2.5, 36);
+                        ball.position.set(bowler.root.position.x - 0.4, 2.1, bowler.root.position.z + 1);
+                        ballVel.set((Math.random()-0.5)*1.2, -2.2, 37);
                     }
                 }
                 else if (state === 2) {
@@ -224,54 +261,52 @@
 
                     if (ball.position.y < 0.06 && ball.position.z < 8) {
                         ball.position.y = 0.06;
-                        ballVel.y = Math.abs(ballVel.y) * 0.75;
+                        ballVel.y = Math.abs(ballVel.y) * 0.78; // Pitch elasticity
                     }
 
                     if (ball.position.z > 8.8 && ball.position.z < 9.8) {
                         state = 3; timer = 0;
                         const shot = Math.random();
-                        striker.torso.rotation.y = shot > 0.5 ? 0 : Math.PI / 4; 
-                        striker.rArm.rotation.x = Math.PI / 1.2; 
+                        striker.torso.rotation.y = shot > 0.4 ? 0 : Math.PI / 3; 
+                        striker.rArm.piv.rotation.x = Math.PI / 1.1; 
 
-                        if (shot > 0.6) {
-                            ballVel.set((Math.random() - 0.5) * 40, 16 + Math.random() * 8, -30 - Math.random() * 15);
-                            commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#ffcc00'>Shot in the air... and it's a Maximum!</b>";
+                        if (shot > 0.5) {
+                            ballVel.set((Math.random() - 0.5) * 45, 17 + Math.random() * 8, -32 - Math.random() * 15);
+                            commEl.innerHTML = "Overs: 49.1 | CRR: 6.31<br><b style='color:#00ffcc; font-size:16px;'>In the slot and dispatched for SIX!</b>";
                         } else {
-                            ballVel.set((Math.random() - 0.5) * 35, 1, -30 - Math.random() * 10);
-                            commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#ffcc00'>Glorious cover drive to the fence!</b>";
+                            ballVel.set((Math.random() - 0.5) * 35, 1, -35 - Math.random() * 10);
+                            commEl.innerHTML = "Overs: 49.1 | CRR: 6.31<br><b style='color:#ffcc00; font-size:16px;'>Exquisite square drive to the fence!</b>";
                         }
                     }
                 }
                 else if (state === 3) {
                     ballVel.y -= 9.8 * dt;
                     ball.position.addInPlace(ballVel.scale(dt));
-                    if (ball.position.y < 0.06) { ball.position.y = 0.06; ballVel.y *= -0.5; ballVel.x *= 0.98; ballVel.z *= 0.98; }
+                    if (ball.position.y < 0.06) { ball.position.y = 0.06; ballVel.y *= -0.4; ballVel.x *= 0.97; ballVel.z *= 0.97; }
 
                     fielders.forEach(f => f.root.lookAt(new BABYLON.Vector3(ball.position.x, 0, ball.position.z)));
 
                     timer += dt;
                     if (timer > 4 || ball.position.length() > 75) {
                         state = 4; timer = 0;
-                        if (ball.position.length() > 75) commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#ff0044'>FOUR RUNS! Magnificent stroke!</b>";
+                        if (ball.position.length() > 75) commEl.innerHTML = "Overs: 49.1 | CRR: 6.31<br><b style='color:#ff0044; font-size:18px;'>IT RUNS ALL THE WAY FOR FOUR!</b>";
                     }
                 }
                 else if (state === 4) {
                     timer += dt;
-                    if (timer > 2) {
-                        bowler.root.position.set(1.5, 0, -25);
-                        bowler.rArm.rotation.x = 0; bowler.torso.rotation.x = 0;
-                        ball.position.y = -10;
-                        commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#fff'>Bowler running in...</b>";
-                        state = 0;
-                    }
+                    if (timer > 2.5) resetMatch();
                 }
             });
 
             return scene;
         };
 
-        const scene = createScene();
-        engine.runRenderLoop(() => { scene.render(); });
+        createScene().then(scene => {
+            document.getElementById('loader').style.opacity = "0";
+            setTimeout(() => document.getElementById('loader').style.display = "none", 500);
+            engine.runRenderLoop(() => { scene.render(); });
+        });
+
         window.addEventListener("resize", () => { engine.resize(); });
     </script>
 </body>
