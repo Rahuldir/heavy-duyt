@@ -5,9 +5,9 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- 1. CONFIGURATION & PRO THEME ---
+# --- 1. CONFIGURATION & PRO F1 THEME ---
 st.set_page_config(
-    page_title="CRIC-F1 // Pit-Wall Pro",
+    page_title="CRIC-F1 // Enterprise Pit-Wall Analytics",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -37,7 +37,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. HIGH-SPEED VECTORIZED PARSER ---
+# --- 2. VECTORIZED CORE PARSER ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -163,7 +163,7 @@ def process_lines(all_lines_tuple):
     if not df.empty:
         df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
         
-        # Strict Wicket Deduplication & Max 10 Cap
+        # Deduplication & 10-wicket max cap
         out_batters = set()
         clean_wickets = []
         for idx, row in df.iterrows():
@@ -176,7 +176,6 @@ def process_lines(all_lines_tuple):
             else:
                 clean_wickets.append(0)
         df['wicket'] = clean_wickets
-        
         df['cumulative_wickets'] = df.groupby('team')['wicket'].cumsum()
         df = df[df['cumulative_wickets'] <= 10]
         
@@ -217,11 +216,10 @@ def calculate_partnerships(df):
             })
     return pd.DataFrame(partnerships)
 
-# --- 3. CHARTS ---
+# --- 3. PLOTLY CHARTS ---
 def draw_manhattan_with_wickets(df):
     manhattan = df.groupby(['over_num', 'team']).agg(runs=('runs', 'sum'), wickets=('wicket', 'sum')).reset_index()
     fig = px.bar(manhattan, x='over_num', y='runs', color='team', barmode='group', template="plotly_dark", color_discrete_sequence=['#e10600', '#3182ce'])
-    
     wickets_df = manhattan[manhattan['wickets'] > 0]
     if not wickets_df.empty:
         fig.add_trace(go.Scatter(
@@ -251,7 +249,7 @@ def draw_zone_wagon_wheel(df):
         ))
     return fig
 
-# --- 4. DASHBOARD UI ---
+# --- 4. STREAMLIT APPLICATION UI ---
 st.sidebar.markdown("### 📥 INGEST MATCH DATA")
 uploaded_pdf = st.sidebar.file_uploader("Upload Match PDF", type=["pdf"])
 raw_text_input = st.sidebar.text_area("Or Paste Raw Commentary Text:")
@@ -271,7 +269,6 @@ if not df.empty:
     view_team = st.radio("Select View", ["Match Overview (Both)"] + teams, horizontal=True)
     display_df = df if view_team == "Match Overview (Both)" else df[df['team'] == view_team]
     
-    # Leaderboard Metrics
     b_stats = display_df.copy()
     b_stats['b_runs'] = b_stats.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
     top_bat = b_stats.groupby('batter')['b_runs'].sum().idxmax() if not b_stats.empty else "N/A"
@@ -293,14 +290,27 @@ if not df.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    tab_scorecard, tab_dash, tab_squad = st.tabs(["📝 Match Scorecard", "📊 Pit-Wall Analytics", "👥 Squads & Playing XI"])
+    # 5 EXTENSIVE TABS FOR MAXIMUM DATA GRANULARITY
+    tab_overview, tab_scorecard, tab_dash, tab_spatial, tab_squad = st.tabs([
+        "📊 Overview", "📝 Full Scorecard", "📈 Pit-Wall Analytics", "🎯 Spatial & Shot %", "👥 Squads & XI"
+    ])
+
+    with tab_overview:
+        st.markdown('<div class="section-card"><h4>Match Command Summary</h4>', unsafe_allow_html=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.metric("Total Match Deliveries Analyzed", len(display_df))
+            st.metric("Total Dot Balls", len(display_df[display_df['runs'] == 0]))
+        with col_b:
+            st.metric("Total Boundaries Hit", display_df['4s'].sum() + display_df['6s'].sum())
+            st.metric("Total Extras Conceded", display_df['is_wd'].sum() + display_df['is_nb'].sum() + display_df['is_lb'].sum() + display_df['is_b'].sum())
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_scorecard:
         if view_team == "Match Overview (Both)":
             st.warning("Select a specific Team from the radio buttons above to view the detailed scorecard.")
         else:
-            st.markdown(f'<div class="section-card"><h4 style="color:#e10600;">{view_team} Innings</h4>', unsafe_allow_html=True)
-            
+            st.markdown(f'<div class="section-card"><h4 style="color:#e10600;">{view_team} Innings Scorecard</h4>', unsafe_allow_html=True)
             batters_df = display_df.copy()
             batters_df['bat_runs'] = batters_df.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
             batters_df['bat_balls'] = batters_df.apply(lambda x: 0 if x['is_wd'] else 1, axis=1)
@@ -308,7 +318,6 @@ if not df.empty:
             batting_stats = batters_df.groupby("batter").agg(
                 Runs=("bat_runs", "sum"), Balls=("bat_balls", "sum"), Fours=("4s", "sum"), Sixes=("6s", "sum"), Dismissal=("dismissal", "last")
             ).reset_index()
-            
             batting_stats['SR'] = ((batting_stats['Runs'] / batting_stats['Balls']) * 100).round(2).fillna(0)
             batting_stats = batting_stats[['batter', 'Dismissal', 'Runs', 'Balls', 'Fours', 'Sixes', 'SR']]
             batting_stats.columns = ['Batter', 'Dismissal', 'R', 'B', '4s', '6s', 'SR']
@@ -316,34 +325,21 @@ if not df.empty:
             
             wides, no_balls, leg_byes, byes = display_df['is_wd'].sum(), display_df['is_nb'].sum(), display_df['is_lb'].sum(), display_df['is_b'].sum()
             total_extras = wides + no_balls + leg_byes + byes
-            
             st.markdown(f"**Extras:** {total_extras} (b {byes}, lb {leg_byes}, w {wides}, nb {no_balls})")
             st.markdown(f"**Total:** {total_r}-{display_df['wicket'].sum()} ({(total_b // 6)}.{total_b % 6} Overs)")
             
-            if playing_xi:
-                team_roster = [p for p, t in playing_xi.items() if t == view_team]
-                batted_players = batting_stats['Batter'].tolist()
-                did_not_bat = [p for p in team_roster if p not in batted_players]
-                if did_not_bat:
-                    st.markdown(f"**Did not Bat:** {', '.join(did_not_bat)}")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown(f'<h4>Bowling</h4>', unsafe_allow_html=True)
-
+            st.markdown("<br><h4>Bowling Performance</h4>", unsafe_allow_html=True)
             overs_grouped = display_df.groupby(['bowler', 'over_num'])['runs'].sum().reset_index()
             maidens_calc = overs_grouped[overs_grouped['runs'] == 0].groupby('bowler').size().reset_index(name='M')
-            
             bowling_stats = display_df.groupby("bowler").agg(
                 Total_Balls=("is_wd", lambda x: (x==0).sum()), 
                 R=("runs", "sum"), W=("wicket", "sum"), NB=("is_nb", "sum"), WD=("is_wd", "sum")
             ).reset_index()
-            
             bowling_stats = pd.merge(bowling_stats, maidens_calc, on='bowler', how='left').fillna(0)
             bowling_stats['O'] = (bowling_stats['Total_Balls'] // 6).astype(str) + "." + (bowling_stats['Total_Balls'] % 6).astype(str)
             bowling_stats['ECO'] = (bowling_stats['R'] / (bowling_stats['Total_Balls'] / 6)).round(2)
             bowling_stats = bowling_stats[['bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']]
             bowling_stats.columns = ['Bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']
-            
             st.dataframe(bowling_stats.sort_values(by="W", ascending=False), use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -361,9 +357,32 @@ if not df.empty:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            st.markdown('<div class="section-card"><h4>Wagon Wheel & Shot %</h4>', unsafe_allow_html=True)
+            st.markdown('<div class="section-card"><h4>Partnership Breakdowns</h4>', unsafe_allow_html=True)
+            part_df = calculate_partnerships(display_df)
+            if not part_df.empty:
+                for idx, row in part_df.iterrows():
+                    b1_pct = (row['b1_runs'] / row['total_runs'] * 100) if row['total_runs'] > 0 else 50
+                    b2_pct = (row['b2_runs'] / row['total_runs'] * 100) if row['total_runs'] > 0 else 50
+                    st.markdown(f"""
+                    <div style="margin-bottom: 20px;">
+                        <div style="text-align: center; font-weight: bold; font-size:12px; margin-bottom: 3px;">{row['total_runs']} Runs ({row['total_balls']} Balls)</div>
+                        <div class="part-container">
+                            <div><b>{row['b1']}</b>: {row['b1_runs']}r</div>
+                            <div style="text-align: right;"><b>{row['b2']}</b>: {row['b2_runs']}r</div>
+                        </div>
+                        <div class="part-bar-bg"><div class="part-bar-left" style="width: {b1_pct}%;"></div><div class="part-bar-right" style="width: {b2_pct}%;"></div></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    with tab_spatial:
+        col_w, col_p = st.columns(2)
+        with col_w:
+            st.markdown('<div class="section-card"><h4>True Wagon Wheel</h4>', unsafe_allow_html=True)
             st.plotly_chart(draw_zone_wagon_wheel(display_df), use_container_width=True)
-            
+            st.markdown('</div>', unsafe_allow_html=True)
+        with col_p:
+            st.markdown('<div class="section-card"><h4>Spatial Zone % Breakdown</h4>', unsafe_allow_html=True)
             zone_pct = display_df[display_df['zone'] != 'Unknown']['zone'].value_counts(normalize=True).mul(100).round(1).reset_index()
             zone_pct.columns = ['Zone', 'Percentage (%)']
             if not zone_pct.empty:
@@ -372,25 +391,6 @@ if not df.empty:
                 st.plotly_chart(fig_donut, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="section-card"><h4>Partnerships</h4>', unsafe_allow_html=True)
-        part_df = calculate_partnerships(display_df)
-        
-        if not part_df.empty:
-            for idx, row in part_df.iterrows():
-                b1_pct = (row['b1_runs'] / row['total_runs'] * 100) if row['total_runs'] > 0 else 50
-                b2_pct = (row['b2_runs'] / row['total_runs'] * 100) if row['total_runs'] > 0 else 50
-                st.markdown(f"""
-                <div style="margin-bottom: 25px;">
-                    <div style="text-align: center; font-weight: bold; margin-bottom: 5px;">{row['total_runs']} ({row['total_balls']})</div>
-                    <div class="part-container">
-                        <div><b>{row['b1']}</b> <br> {row['b1_runs']} ({row['b1_balls']})</div>
-                        <div style="text-align: right;"><b>{row['b2']}</b> <br> {row['b2_runs']} ({row['b2_balls']})</div>
-                    </div>
-                    <div class="part-bar-bg"><div class="part-bar-left" style="width: {b1_pct}%;"></div><div class="part-bar-right" style="width: {b2_pct}%;"></div></div>
-                </div>
-                """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
     with tab_squad:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         if len(team_names) >= 2:
@@ -398,12 +398,10 @@ if not df.empty:
             t1_players = [p for p, t in playing_xi.items() if t == t1]
             t2_players = [p for p, t in playing_xi.items() if t == t2]
             col_t1, col_t2 = st.columns(2)
-            
             with col_t1:
                 st.markdown(f'<div class="roster-header" style="background-color: rgba(225, 6, 0, 0.1); color: #e10600; border: 1px solid #e10600;">{t1}</div>', unsafe_allow_html=True)
                 for p in t1_players:
                     st.markdown(f'<div class="roster-card"><div class="roster-avatar">👤</div><div><div class="roster-name">{p}</div><div class="roster-role">Player</div></div></div>', unsafe_allow_html=True)
-                    
             with col_t2:
                 st.markdown(f'<div class="roster-header" style="background-color: rgba(49, 130, 206, 0.1); color: #3182ce; border: 1px solid #3182ce;">{t2}</div>', unsafe_allow_html=True)
                 for p in t2_players:
@@ -413,4 +411,3 @@ if not df.empty:
         st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("Awaiting Match PDF upload or Raw Text input...")
-    
