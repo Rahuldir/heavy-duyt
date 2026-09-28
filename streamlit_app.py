@@ -5,9 +5,9 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- 1. CONFIGURATION & UI THEME ---
+# --- 1. CONFIGURATION & F1 PRO UI THEME ---
 st.set_page_config(
-    page_title="CRIC-F1 // Pro Analytics",
+    page_title="CRIC-F1 // Pit-Wall Pro",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -15,35 +15,37 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        .stApp { background-color: #0b0e14; color: #f1f5f9; font-family: 'Inter', 'Segoe UI', sans-serif; }
-        .metric-box { background-color: #151b26; border: 1px solid #1f2937; padding: 15px; border-radius: 8px; text-align: center; }
-        .metric-title { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; }
-        .metric-value { font-size: 24px; font-weight: 800; color: #ffffff; }
-        .section-card { background-color: #111827; border: 1px solid #1f2937; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        .stApp { background-color: #07090e; color: #f1f5f9; font-family: 'Inter', 'Segoe UI', sans-serif; }
+        .f1-metric-box { background: linear-gradient(135deg, #151b26 0%, #0d1117 100%); border: 1px solid #1f2937; border-left: 4px solid #e10600; padding: 16px; border-radius: 8px; text-align: left; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .f1-metric-title { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
+        .f1-metric-value { font-size: 22px; font-weight: 900; color: #ffffff; font-family: 'Courier New', monospace; margin-top: 4px; }
+        .section-card { background-color: #111827; border: 1px solid #1f2937; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
         
         .part-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 14px; }
         .part-bar-bg { width: 100%; height: 8px; background-color: #374151; border-radius: 4px; margin-bottom: 20px; display: flex; overflow: hidden; }
-        .part-bar-left { height: 100%; background-color: #8b5cf6; } 
-        .part-bar-right { height: 100%; background-color: #d1d5db; }
+        .part-bar-left { height: 100%; background-color: #e10600; } 
+        .part-bar-right { height: 100%; background-color: #3182ce; }
         
-        .roster-header { padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 15px; font-size: 18px; }
+        .roster-header { padding: 12px; border-radius: 8px; text-align: center; font-weight: 900; margin-bottom: 15px; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
         .roster-card { display: flex; align-items: center; padding: 12px; border-bottom: 1px solid #1f2937; transition: background-color 0.2s ease; }
         .roster-card:hover { background-color: #1f2937; }
-        .roster-avatar { background-color: #374151; border-radius: 50%; width: 45px; height: 45px; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-size: 22px; }
-        .roster-name { font-weight: bold; color: #ffffff; font-size: 15px; }
-        .roster-role { font-size: 12px; color: #9ca3af; }
+        .roster-avatar { background-color: #1f2937; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-size: 18px; border: 1px solid #374151; }
+        .roster-name { font-weight: 700; color: #ffffff; font-size: 14px; }
+        .roster-role { font-size: 11px; color: #9ca3af; text-transform: uppercase; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# --- 2. FOOLPROOF PARSER ENGINE ---
+# --- 2. BULLETPROOF PARSER ENGINE ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
     return clean if 2 < len(clean) < 25 else None
 
-def process_lines(all_lines):
+@st.cache_data(show_spinner=False)
+def process_lines(all_lines_tuple):
+    all_lines = list(all_lines_tuple)
     match_title = "Match Overview"
     playing_xi, team_names = {}, []
     
@@ -81,8 +83,7 @@ def process_lines(all_lines):
     noise_keywords = ['reserved', 'times of india', 'navbharat', 'ask ai', 'platforms', 'cookie', 'privacy', 'subscribe']
 
     for line in all_lines:
-        if any(noise in line.lower() for noise in noise_keywords):
-            continue
+        if any(noise in line.lower() for noise in noise_keywords): continue
 
         over_match = re.match(r"^(\d{1,2}\.\d{1,2})$", line)
         if over_match:
@@ -100,8 +101,7 @@ def process_lines(all_lines):
             outcome_segment = desc.lower().split(',')[0].strip()
             
             valid_outcomes = ['run', 'runs', 'four', 'six', 'maximum', 'out', 'wide', 'no ball', 'bye', 'byes']
-            if not any(k in outcome_segment for k in valid_outcomes):
-                continue
+            if not any(k in outcome_segment for k in valid_outcomes): continue
                 
             bowler, batter = clean_name(raw_bowler), clean_name(raw_batter)
             if not bowler or not batter: continue
@@ -163,13 +163,13 @@ def process_lines(all_lines):
     if not df.empty:
         df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
         
-        # STRICT DEDUPLICATION: Ensure a batter can only be marked out ONCE per team innings
+        # Deduplicate Wickets & Hard Cap at 10 per innings
         out_batters = set()
         clean_wickets = []
         for idx, row in df.iterrows():
             if row['wicket'] == 1:
                 if row['batter'] in out_batters:
-                    clean_wickets.append(0) # Duplicate dismissal mention, ignore
+                    clean_wickets.append(0)
                 else:
                     out_batters.add(row['batter'])
                     clean_wickets.append(1)
@@ -177,20 +177,19 @@ def process_lines(all_lines):
                 clean_wickets.append(0)
         df['wicket'] = clean_wickets
         
-        # Hard cap: Max 10 wickets per innings
         df['cumulative_wickets'] = df.groupby('team')['wicket'].cumsum()
         df = df[df['cumulative_wickets'] <= 10]
         
     return df, match_title, playing_xi, team_names
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def parse_pdf(uploaded_file):
     all_lines = []
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
             text = page.extract_text()
             if text: all_lines.extend([line.strip() for line in text.split("\n") if line.strip()])
-    return process_lines(all_lines)
+    return process_lines(tuple(all_lines))
 
 def calculate_partnerships(df):
     partnerships = []
@@ -218,10 +217,10 @@ def calculate_partnerships(df):
             })
     return pd.DataFrame(partnerships)
 
-# --- 3. CHART GENERATORS ---
+# --- 3. CHARTS ---
 def draw_manhattan_with_wickets(df):
     manhattan = df.groupby(['over_num', 'team']).agg(runs=('runs', 'sum'), wickets=('wicket', 'sum')).reset_index()
-    fig = px.bar(manhattan, x='over_num', y='runs', color='team', barmode='group', template="plotly_dark", color_discrete_sequence=['#9d174d', '#1e3a8a'])
+    fig = px.bar(manhattan, x='over_num', y='runs', color='team', barmode='group', template="plotly_dark", color_discrete_sequence=['#e10600', '#3182ce'])
     
     wickets_df = manhattan[manhattan['wickets'] > 0]
     if not wickets_df.empty:
@@ -230,29 +229,25 @@ def draw_manhattan_with_wickets(df):
             mode='markers+text', text='W', textfont=dict(color='white', size=10, weight='bold'),
             marker=dict(color='#dc2626', size=16, symbol='circle'), name='Wicket', showlegend=False
         ))
-        
     fig.update_layout(xaxis_title="Overs", yaxis_title="Runs", plot_bgcolor='#111827', paper_bgcolor='#111827', margin=dict(t=10, b=10, l=10, r=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
 
 def draw_zone_wagon_wheel(df):
     zone_data = df[df['zone'] != 'Unknown'].groupby(['zone', 'angle'])['runs'].sum().reset_index()
     fig = go.Figure()
-    
     fig.update_layout(
         polar=dict(
-            bgcolor='#a3e635',
-            radialaxis=dict(visible=False, range=[0, 10]),
+            bgcolor='#a3e635', radialaxis=dict(visible=False, range=[0, 10]),
             angularaxis=dict(direction="clockwise", rotation=0, showticklabels=False, showgrid=False)
         ),
         showlegend=False, template="plotly_dark", margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='#111827'
     )
     fig.add_trace(go.Scatterpolar(r=[0, 2, 0, 2], theta=[0, 180, 0, 0], mode='lines', line=dict(color='#d9f99d', width=4)))
-    
     if not zone_data.empty:
         fig.add_trace(go.Scatterpolar(
             r=[6] * len(zone_data), theta=zone_data['angle'], mode='markers+text',
-            marker=dict(color='white', size=35, opacity=0.9),
-            text=zone_data['runs'], textfont=dict(color='#111827', size=14, weight='bold'), hoverinfo="text", hovertext=zone_data['zone']
+            marker=dict(color='white', size=35, opacity=0.9), text=zone_data['runs'],
+            textfont=dict(color='#111827', size=14, weight='bold'), hoverinfo="text", hovertext=zone_data['zone']
         ))
     return fig
 
@@ -266,7 +261,7 @@ df, match_title, playing_xi, team_names = pd.DataFrame(), "", {}, []
 if uploaded_pdf is not None:
     df, match_title, playing_xi, team_names = parse_pdf(uploaded_pdf)
 elif raw_text_input:
-    lines = [l.strip() for l in raw_text_input.split("\n") if l.strip()]
+    lines = tuple([l.strip() for l in raw_text_input.split("\n") if l.strip()])
     df, match_title, playing_xi, team_names = process_lines(lines)
 
 if not df.empty:
@@ -276,13 +271,25 @@ if not df.empty:
     view_team = st.radio("Select View", ["Match Overview (Both)"] + teams, horizontal=True)
     display_df = df if view_team == "Match Overview (Both)" else df[df['team'] == view_team]
     
-    col1, col2, col3, col4 = st.columns(4)
+    # Calculate Top Batsman & Bowler for Match Leaderboard
+    b_stats = display_df.copy()
+    b_stats['b_runs'] = b_stats.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
+    top_bat = b_stats.groupby('batter')['b_runs'].sum().idxmax() if not b_stats.empty else "N/A"
+    top_bat_runs = b_stats.groupby('batter')['b_runs'].sum().max() if not b_stats.empty else 0
+    
+    top_bowl = display_df.groupby('bowler')['wicket'].sum().idxmax() if not display_df.empty else "N/A"
+    top_bowl_wkts = display_df.groupby('bowler')['wicket'].sum().max() if not display_df.empty else 0
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     total_r = display_df["runs"].sum()
     total_b = len(display_df[display_df["is_wd"]==0])
-    col1.markdown(f'<div class="metric-box"><div class="metric-title">Score</div><div class="metric-value">{total_r}/{display_df["wicket"].sum()}</div></div>', unsafe_allow_html=True)
-    col2.markdown(f'<div class="metric-box"><div class="metric-title">Overs</div><div class="metric-value">{(total_b // 6) + (total_b % 6)/10}</div></div>', unsafe_allow_html=True)
-    col3.markdown(f'<div class="metric-box"><div class="metric-title">Run Rate</div><div class="metric-value">{((total_r / (total_b / 6)) if total_b > 0 else 0):.2f}</div></div>', unsafe_allow_html=True)
-    col4.markdown(f'<div class="metric-box"><div class="metric-title">Boundaries</div><div class="metric-value">{display_df[display_df["4s"]==1].shape[0]} <span style="font-size:14px;color:#9ca3af;">(4s)</span> | {display_df[display_df["6s"]==1].shape[0]} <span style="font-size:14px;color:#9ca3af;">(6s)</span></div></div>', unsafe_allow_html=True)
+    
+    col1.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Score</div><div class="f1-metric-value">{total_r}/{display_df["wicket"].sum()}</div></div>', unsafe_allow_html=True)
+    col2.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Overs</div><div class="f1-metric-value">{(total_b // 6)}.{total_b % 6}</div></div>', unsafe_allow_html=True)
+    col3.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Run Rate</div><div class="f1-metric-value">{((total_r / (total_b / 6)) if total_b > 0 else 0):.2f}</div></div>', unsafe_allow_html=True)
+    col4.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Boundaries</div><div class="f1-metric-value">{display_df["4s"].sum()} | {display_df["6s"].sum()}</div></div>', unsafe_allow_html=True)
+    col5.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Top Batsman</div><div class="f1-metric-value" style="font-size:16px;">{top_bat} ({top_bat_runs}r)</div></div>', unsafe_allow_html=True)
+    col6.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Top Bowler</div><div class="f1-metric-value" style="font-size:16px;">{top_bowl} ({top_bowl_wkts}w)</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -292,7 +299,7 @@ if not df.empty:
         if view_team == "Match Overview (Both)":
             st.warning("Select a specific Team from the radio buttons above to view the detailed scorecard.")
         else:
-            st.markdown(f'<div class="section-card"><h4 style="color:#10b981;">{view_team} Innings</h4>', unsafe_allow_html=True)
+            st.markdown(f'<div class="section-card"><h4 style="color:#e10600;">{view_team} Innings</h4>', unsafe_allow_html=True)
             
             batters_df = display_df.copy()
             batters_df['bat_runs'] = batters_df.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
@@ -304,13 +311,10 @@ if not df.empty:
             
             batting_stats['SR'] = ((batting_stats['Runs'] / batting_stats['Balls']) * 100).round(2).fillna(0)
             batting_stats = batting_stats[['batter', 'Dismissal', 'Runs', 'Balls', 'Fours', 'Sixes', 'SR']]
-            batting_stats.columns = ['Batter', ' ', 'R', 'B', '4s', '6s', 'SR']
-            st.dataframe(batting_stats, use_container_width=True, hide_index=True)
+            batting_stats.columns = ['Batter', 'Dismissal', 'R', 'B', '4s', '6s', 'SR']
+            st.dataframe(batting_stats.sort_values(by="R", ascending=False), use_container_width=True, hide_index=True)
             
-            wides = display_df['is_wd'].sum()
-            no_balls = display_df['is_nb'].sum()
-            leg_byes = display_df['is_lb'].sum()
-            byes = display_df['is_b'].sum()
+            wides, no_balls, leg_byes, byes = display_df['is_wd'].sum(), display_df['is_nb'].sum(), display_df['is_lb'].sum(), display_df['is_b'].sum()
             total_extras = wides + no_balls + leg_byes + byes
             
             st.markdown(f"**Extras:** {total_extras} (b {byes}, lb {leg_byes}, w {wides}, nb {no_balls})")
@@ -340,7 +344,7 @@ if not df.empty:
             bowling_stats = bowling_stats[['bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']]
             bowling_stats.columns = ['Bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']
             
-            st.dataframe(bowling_stats, use_container_width=True, hide_index=True)
+            st.dataframe(bowling_stats.sort_values(by="W", ascending=False), use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_dash:
@@ -351,7 +355,7 @@ if not df.empty:
             with tabs[0]: st.plotly_chart(draw_manhattan_with_wickets(display_df), use_container_width=True)
             with tabs[1]:
                 worm = display_df.groupby(['over_exact', 'team'])['runs'].sum().groupby(level=1).cumsum().reset_index()
-                fig_worm = px.line(worm, x='over_exact', y='runs', color='team', template="plotly_dark", color_discrete_sequence=['#9d174d', '#1e3a8a'])
+                fig_worm = px.line(worm, x='over_exact', y='runs', color='team', template="plotly_dark", color_discrete_sequence=['#e10600', '#3182ce'])
                 fig_worm.update_layout(plot_bgcolor='#111827', paper_bgcolor='#111827', xaxis_title="Overs", yaxis_title="Cumulative Runs")
                 st.plotly_chart(fig_worm, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -363,7 +367,7 @@ if not df.empty:
             zone_pct = display_df[display_df['zone'] != 'Unknown']['zone'].value_counts(normalize=True).mul(100).round(1).reset_index()
             zone_pct.columns = ['Zone', 'Percentage (%)']
             if not zone_pct.empty:
-                fig_donut = px.pie(zone_pct, names='Zone', values='Percentage (%)', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.sequential.Tealgrn_r)
+                fig_donut = px.pie(zone_pct, names='Zone', values='Percentage (%)', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.sequential.Reds_r)
                 fig_donut.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='#111827', plot_bgcolor='#111827')
                 st.plotly_chart(fig_donut, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -396,12 +400,12 @@ if not df.empty:
             col_t1, col_t2 = st.columns(2)
             
             with col_t1:
-                st.markdown(f'<div class="roster-header" style="background-color: rgba(139, 92, 246, 0.1); color: #8b5cf6; border: 1px solid #8b5cf6;">{t1}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="roster-header" style="background-color: rgba(225, 6, 0, 0.1); color: #e10600; border: 1px solid #e10600;">{t1}</div>', unsafe_allow_html=True)
                 for p in t1_players:
                     st.markdown(f'<div class="roster-card"><div class="roster-avatar">👤</div><div><div class="roster-name">{p}</div><div class="roster-role">Player</div></div></div>', unsafe_allow_html=True)
                     
             with col_t2:
-                st.markdown(f'<div class="roster-header" style="background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 1px solid #3b82f6;">{t2}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="roster-header" style="background-color: rgba(49, 130, 206, 0.1); color: #3182ce; border: 1px solid #3182ce;">{t2}</div>', unsafe_allow_html=True)
                 for p in t2_players:
                     st.markdown(f'<div class="roster-card"><div class="roster-avatar">👤</div><div><div class="roster-name">{p}</div><div class="roster-role">Player</div></div></div>', unsafe_allow_html=True)
         else:
