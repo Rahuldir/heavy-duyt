@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Cricket Broadcast - Babylon.js</title>
+    <title>Pro Cricket Simulation - Live Broadcast</title>
     <style>
-        body, html { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body, html { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #050510; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         canvas { width: 100%; height: 100%; outline: none; touch-action: none; }
         
         #broadcast-hud {
@@ -27,17 +27,16 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; pointer-events: none;
         }
     </style>
-    <!-- Babylon.js CDN -->
+    <!-- Babylon.js CDN Engine -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 </head>
 <body>
 
     <div id="director-cam">CAM: TACTICAL WIDE</div>
     
     <div id="broadcast-hud">
-        <div class="team-score"><span style="color:#aaa; font-size:20px;">IND</span> <span class="team-red">245/4</span></div>
-        <div class="match-info" id="commentary">Overs: 42.3 | CRR: 5.76<br><b style="color:#fff; font-size:15px;">Match Simulation Running...</b></div>
+        <div class="team-score"><span style="color:#aaa; font-size:20px;">IND</span> <span class="team-red">284/5</span></div>
+        <div class="match-info" id="commentary">Overs: 47.1 | CRR: 6.02<br><b style="color:#fff; font-size:15px;">Simulating live match action...</b></div>
         <div class="team-score"><span class="team-yellow">AUS</span></div>
     </div>
 
@@ -49,16 +48,16 @@
 
         const createScene = function () {
             const scene = new BABYLON.Scene(engine);
-            scene.clearColor = new BABYLON.Color4(0.35, 0.65, 0.9, 1); // Broadcast sky blue
+            scene.clearColor = new BABYLON.Color4(0.35, 0.65, 0.9, 1);
             scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
             scene.fogColor = new BABYLON.Color3(0.35, 0.65, 0.9);
             scene.fogDensity = 0.002;
 
-            // Camera
+            // Camera Setup
             const camera = new BABYLON.UniversalCamera("Cam", new BABYLON.Vector3(0, 5, -25), scene);
             camera.setTarget(new BABYLON.Vector3(0, 1, 9));
 
-            // Lighting (Stadium Floodlights simulation)
+            // Lighting
             const ambient = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
             ambient.intensity = 0.6;
 
@@ -70,7 +69,7 @@
             shadowGen.useBlurExponentialShadowMap = true;
             shadowGen.blurKernel = 32;
 
-            // --- Turf & Pitch ---
+            // Turf & Pitch
             const grassTex = new BABYLON.DynamicTexture("grass", {width: 512, height: 512}, scene, false);
             const ctx = grassTex.getContext();
             for (let i = 0; i < 16; i++) {
@@ -109,7 +108,7 @@
             }
             buildStumps(10.06); buildStumps(-10.06);
 
-            // --- Procedural Players ---
+            // Character Materials
             const redMat = new BABYLON.StandardMaterial("red", scene); redMat.diffuseColor = new BABYLON.Color3(0.85, 0.1, 0.1);
             const yelMat = new BABYLON.StandardMaterial("yel", scene); yelMat.diffuseColor = new BABYLON.Color3(0.95, 0.8, 0.1);
             const skinMat = new BABYLON.StandardMaterial("skin", scene); skinMat.diffuseColor = new BABYLON.Color3(0.8, 0.6, 0.4);
@@ -167,8 +166,8 @@
             ball.material.diffuseColor = new BABYLON.Color3(1, 1, 1);
             ball.position.y = -10; shadowGen.addShadowCaster(ball);
 
-            // --- Game State Engine ---
-            let state = 0; // 0:Runup, 1:Bowl, 2:Flight, 3:Hit, 4:Reset
+            // Simulation Logic
+            let state = 0; 
             let timer = 0;
             let ballVel = new BABYLON.Vector3();
             const commEl = document.getElementById('commentary');
@@ -188,7 +187,7 @@
             scene.onBeforeRenderObservable.add(() => {
                 const dt = engine.getDeltaTime() / 1000;
 
-                // Director Camera Switching
+                // Director Camera Angles
                 if (state === 0 || state === 1) {
                     dirEl.innerText = "CAM: UMPIRE HIGH";
                     camera.position = BABYLON.Vector3.Lerp(camera.position, new BABYLON.Vector3(0, 4, -20), 0.05);
@@ -203,7 +202,7 @@
                     camera.setTarget(ball.position);
                 }
 
-                // Match State Loop
+                // Match Automation State Machine
                 if (state === 0) {
                     const spd = 7.5;
                     bowler.root.position.z += spd * dt;
@@ -224,21 +223,22 @@
                     ball.position.addInPlace(ballVel.scale(dt));
 
                     if (ball.position.y < 0.06 && ball.position.z < 8) {
-                        ball.position.y = 0.06; ballVel.y = Math.abs(ballVel.y) * 0.75;
+                        ball.position.y = 0.06;
+                        ballVel.y = Math.abs(ballVel.y) * 0.75;
                     }
 
                     if (ball.position.z > 8.8 && ball.position.z < 9.8) {
                         state = 3; timer = 0;
                         const shot = Math.random();
-                        striker.torso.rotation.y = shot > 0.5 ? 0 : Math.PI / 4;
-                        striker.rArm.rotation.x = Math.PI / 1.2;
+                        striker.torso.rotation.y = shot > 0.5 ? 0 : Math.PI / 4; 
+                        striker.rArm.rotation.x = Math.PI / 1.2; 
 
                         if (shot > 0.6) {
                             ballVel.set((Math.random() - 0.5) * 40, 16 + Math.random() * 8, -30 - Math.random() * 15);
-                            commEl.innerHTML = "Overs: 42.3 | CRR: 5.76<br><b style='color:#ffcc00'>Maximo! Clears the rope with ease!</b>";
+                            commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#ffcc00'>Shot in the air... and it's a Maximum!</b>";
                         } else {
                             ballVel.set((Math.random() - 0.5) * 35, 1, -30 - Math.random() * 10);
-                            commEl.innerHTML = "Overs: 42.3 | CRR: 5.76<br><b style='color:#ffcc00'>Pure timing! Racing to the boundary.</b>";
+                            commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#ffcc00'>Glorious cover drive to the fence!</b>";
                         }
                     }
                 }
@@ -252,7 +252,7 @@
                     timer += dt;
                     if (timer > 4 || ball.position.length() > 75) {
                         state = 4; timer = 0;
-                        if (ball.position.length() > 75) commEl.innerHTML = "Overs: 42.3 | CRR: 5.76<br><b style='color:#ff0044'>IT'S FOUR RUNS!</b>";
+                        if (ball.position.length() > 75) commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#ff0044'>FOUR RUNS! Magnificent stroke!</b>";
                     }
                 }
                 else if (state === 4) {
@@ -261,7 +261,7 @@
                         bowler.root.position.set(1.5, 0, -25);
                         bowler.rArm.rotation.x = 0; bowler.torso.rotation.x = 0;
                         ball.position.y = -10;
-                        commEl.innerHTML = "Overs: 42.3 | CRR: 5.76<br><b style='color:#fff'>New ball on its way...</b>";
+                        commEl.innerHTML = "Overs: 47.1 | CRR: 6.02<br><b style='color:#fff'>Bowler running in...</b>";
                         state = 0;
                     }
                 }
