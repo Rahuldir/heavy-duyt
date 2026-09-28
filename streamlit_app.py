@@ -5,7 +5,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- 1. CONFIGURATION & F1 PRO UI THEME ---
+# --- 1. CONFIGURATION & PRO THEME ---
 st.set_page_config(
     page_title="CRIC-F1 // Pit-Wall Pro",
     layout="wide",
@@ -16,9 +16,9 @@ st.markdown(
     """
     <style>
         .stApp { background-color: #07090e; color: #f1f5f9; font-family: 'Inter', 'Segoe UI', sans-serif; }
-        .f1-metric-box { background: linear-gradient(135deg, #151b26 0%, #0d1117 100%); border: 1px solid #1f2937; border-left: 4px solid #e10600; padding: 16px; border-radius: 8px; text-align: left; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .f1-metric-box { background: linear-gradient(135deg, #151b26 0%, #0d1117 100%); border: 1px solid #1f2937; border-left: 4px solid #e10600; padding: 14px; border-radius: 8px; text-align: left; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .f1-metric-title { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
-        .f1-metric-value { font-size: 22px; font-weight: 900; color: #ffffff; font-family: 'Courier New', monospace; margin-top: 4px; }
+        .f1-metric-value { font-size: 20px; font-weight: 900; color: #ffffff; font-family: 'Courier New', monospace; margin-top: 4px; }
         .section-card { background-color: #111827; border: 1px solid #1f2937; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
         
         .part-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 14px; }
@@ -37,7 +37,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. BULLETPROOF PARSER ENGINE ---
+# --- 2. HIGH-SPEED VECTORIZED PARSER ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -163,7 +163,7 @@ def process_lines(all_lines_tuple):
     if not df.empty:
         df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
         
-        # Deduplicate Wickets & Hard Cap at 10 per innings
+        # Strict Wicket Deduplication & Max 10 Cap
         out_batters = set()
         clean_wickets = []
         for idx, row in df.iterrows():
@@ -271,7 +271,7 @@ if not df.empty:
     view_team = st.radio("Select View", ["Match Overview (Both)"] + teams, horizontal=True)
     display_df = df if view_team == "Match Overview (Both)" else df[df['team'] == view_team]
     
-    # Calculate Top Batsman & Bowler for Match Leaderboard
+    # Leaderboard Metrics
     b_stats = display_df.copy()
     b_stats['b_runs'] = b_stats.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
     top_bat = b_stats.groupby('batter')['b_runs'].sum().idxmax() if not b_stats.empty else "N/A"
@@ -288,8 +288,8 @@ if not df.empty:
     col2.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Overs</div><div class="f1-metric-value">{(total_b // 6)}.{total_b % 6}</div></div>', unsafe_allow_html=True)
     col3.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Run Rate</div><div class="f1-metric-value">{((total_r / (total_b / 6)) if total_b > 0 else 0):.2f}</div></div>', unsafe_allow_html=True)
     col4.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Boundaries</div><div class="f1-metric-value">{display_df["4s"].sum()} | {display_df["6s"].sum()}</div></div>', unsafe_allow_html=True)
-    col5.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Top Batsman</div><div class="f1-metric-value" style="font-size:16px;">{top_bat} ({top_bat_runs}r)</div></div>', unsafe_allow_html=True)
-    col6.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Top Bowler</div><div class="f1-metric-value" style="font-size:16px;">{top_bowl} ({top_bowl_wkts}w)</div></div>', unsafe_allow_html=True)
+    col5.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Top Batsman</div><div class="f1-metric-value" style="font-size:15px;">{top_bat} ({top_bat_runs}r)</div></div>', unsafe_allow_html=True)
+    col6.markdown(f'<div class="f1-metric-box"><div class="f1-metric-title">Top Bowler</div><div class="f1-metric-value" style="font-size:15px;">{top_bowl} ({top_bowl_wkts}w)</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -413,3 +413,4 @@ if not df.empty:
         st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("Awaiting Match PDF upload or Raw Text input...")
+    
