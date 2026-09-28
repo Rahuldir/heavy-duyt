@@ -37,7 +37,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. VECTORIZED CORE PARSER ---
+# --- 2. VECTORIZED CORE PARSER WITH NORMALIZATION ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -216,7 +216,7 @@ def calculate_partnerships(df):
             })
     return pd.DataFrame(partnerships)
 
-# --- 3. PLOTLY CHARTS ---
+# --- 3. CHARTS ---
 def draw_manhattan_with_wickets(df):
     manhattan = df.groupby(['over_num', 'team']).agg(runs=('runs', 'sum'), wickets=('wicket', 'sum')).reset_index()
     fig = px.bar(manhattan, x='over_num', y='runs', color='team', barmode='group', template="plotly_dark", color_discrete_sequence=['#e10600', '#3182ce'])
@@ -248,6 +248,54 @@ def draw_zone_wagon_wheel(df):
             textfont=dict(color='#111827', size=14, weight='bold'), hoverinfo="text", hovertext=zone_data['zone']
         ))
     return fig
+
+def render_scorecard_for_team(team_name, team_df, playing_xi):
+    st.markdown(f'<div class="section-card"><h4 style="color:#e10600;">{team_name} Innings Scorecard</h4>', unsafe_allow_html=True)
+    batters_df = team_df.copy()
+    batters_df['bat_runs'] = batters_df.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
+    batters_df['bat_balls'] = batters_df.apply(lambda x: 0 if x['is_wd'] else 1, axis=1)
+    
+    batting_stats = batters_df.groupby("batter").agg(
+        Runs=("bat_runs", "sum"), Balls=("bat_balls", "sum"), Fours=("4s", "sum"), Sixes=("6s", "sum"), Dismissal=("dismissal", "last")
+    ).reset_index()
+    batting_stats['SR'] = ((batting_stats['Runs'] / batting_stats['Balls']) * 100).round(2).fillna(0)
+    batting_stats = batting_stats[['batter', 'Dismissal', 'Runs', 'Balls', 'Fours', 'Sixes', 'SR']]
+    batting_stats.columns = ['Batter', 'Dismissal', 'R', 'B', '4s', '6s', 'SR']
+    st.dataframe(batting_stats.sort_values(by="R", ascending=False), use_container_width=True, hide_index=True)
+    
+    wides, no_balls, leg_byes, byes = team_df['is_wd'].sum(), team_df['is_nb'].sum(), team_df['is_lb'].sum(), team_df['is_b'].sum()
+    total_extras = wides + no_balls + leg_byes + byes
+    team_r = team_df["runs"].sum()
+    team_b = len(team_df[team_df["is_wd"]==0])
+    
+    st.markdown(f"**Extras:** {total_extras} (b {byes}, lb {leg_byes}, w {wides}, nb {no_balls})")
+    st.markdown(f"**Total:** {team_r}-{team_df['wicket'].sum()} ({(team_b // 6)}.{team_b % 6} Overs)")
+    
+    if playing_xi:
+        team_roster = [p for p, t in playing_xi.items() if t == team_name]
+        batted_players = batting_stats['Batter'].tolist()
+        did_not_bat = [p for p in team_roster if p not in batted_players]
+        if did_not_bat:
+            st.markdown(f"**Did not Bat:** {', '.join(did_not_bat)}")
+    
+    st.markdown("<br><h4>Bowling Performance</h4>", unsafe_allow_html=True)
+    overs_grouped = team_df.groupby(['bowler', 'over_num'])['runs'].sum().reset_index()
+    maidens_calc = overs_grouped[overs_grouped['runs'] == 0].groupby('bowler').size().reset_index(name='M')
+    bowling_stats = team_df.groupby("bowler").agg(
+        Total_Balls=("is_wd", lambda x: (x==0).sum()), 
+        R=("runs", "sum"), W=("wicket", "sum"), NB=("is_nb", "sum"), WD=("is_wd", "sum")
+    ).reset_index()
+    bowling_stats = pd.merge(bowling_stats, maidens_calc, on='bowler', how='left').fillna(0)
+    
+    # Strict 10-Over Normalization Cap for Bowlers
+    bowling_stats['Total_Balls'] = bowling_stats['Total_Balls'].apply(lambda b: min(b, 60))
+    bowling_stats['O'] = (bowling_stats['Total_Balls'] // 6).astype(str) + "." + (bowling_stats['Total_Balls'] % 6).astype(str)
+    bowling_stats['ECO'] = (bowling_stats['R'] / (bowling_stats['Total_Balls'] / 6)).round(2).fillna(0)
+    
+    bowling_stats = bowling_stats[['bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']]
+    bowling_stats.columns = ['Bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']
+    st.dataframe(bowling_stats.sort_values(by="W", ascending=False), use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 4. STREAMLIT APPLICATION UI ---
 st.sidebar.markdown("### 📥 INGEST MATCH DATA")
@@ -290,7 +338,6 @@ if not df.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 5 EXTENSIVE TABS FOR MAXIMUM DATA GRANULARITY
     tab_overview, tab_scorecard, tab_dash, tab_spatial, tab_squad = st.tabs([
         "📊 Overview", "📝 Full Scorecard", "📈 Pit-Wall Analytics", "🎯 Spatial & Shot %", "👥 Squads & XI"
     ])
@@ -308,40 +355,10 @@ if not df.empty:
 
     with tab_scorecard:
         if view_team == "Match Overview (Both)":
-            st.warning("Select a specific Team from the radio buttons above to view the detailed scorecard.")
+            for t in teams:
+                render_scorecard_for_team(t, df[df['team'] == t], playing_xi)
         else:
-            st.markdown(f'<div class="section-card"><h4 style="color:#e10600;">{view_team} Innings Scorecard</h4>', unsafe_allow_html=True)
-            batters_df = display_df.copy()
-            batters_df['bat_runs'] = batters_df.apply(lambda x: 0 if x['is_wd'] or x['is_lb'] or x['is_b'] else (x['runs'] - x['is_nb'] if x['is_nb'] else x['runs']), axis=1)
-            batters_df['bat_balls'] = batters_df.apply(lambda x: 0 if x['is_wd'] else 1, axis=1)
-            
-            batting_stats = batters_df.groupby("batter").agg(
-                Runs=("bat_runs", "sum"), Balls=("bat_balls", "sum"), Fours=("4s", "sum"), Sixes=("6s", "sum"), Dismissal=("dismissal", "last")
-            ).reset_index()
-            batting_stats['SR'] = ((batting_stats['Runs'] / batting_stats['Balls']) * 100).round(2).fillna(0)
-            batting_stats = batting_stats[['batter', 'Dismissal', 'Runs', 'Balls', 'Fours', 'Sixes', 'SR']]
-            batting_stats.columns = ['Batter', 'Dismissal', 'R', 'B', '4s', '6s', 'SR']
-            st.dataframe(batting_stats.sort_values(by="R", ascending=False), use_container_width=True, hide_index=True)
-            
-            wides, no_balls, leg_byes, byes = display_df['is_wd'].sum(), display_df['is_nb'].sum(), display_df['is_lb'].sum(), display_df['is_b'].sum()
-            total_extras = wides + no_balls + leg_byes + byes
-            st.markdown(f"**Extras:** {total_extras} (b {byes}, lb {leg_byes}, w {wides}, nb {no_balls})")
-            st.markdown(f"**Total:** {total_r}-{display_df['wicket'].sum()} ({(total_b // 6)}.{total_b % 6} Overs)")
-            
-            st.markdown("<br><h4>Bowling Performance</h4>", unsafe_allow_html=True)
-            overs_grouped = display_df.groupby(['bowler', 'over_num'])['runs'].sum().reset_index()
-            maidens_calc = overs_grouped[overs_grouped['runs'] == 0].groupby('bowler').size().reset_index(name='M')
-            bowling_stats = display_df.groupby("bowler").agg(
-                Total_Balls=("is_wd", lambda x: (x==0).sum()), 
-                R=("runs", "sum"), W=("wicket", "sum"), NB=("is_nb", "sum"), WD=("is_wd", "sum")
-            ).reset_index()
-            bowling_stats = pd.merge(bowling_stats, maidens_calc, on='bowler', how='left').fillna(0)
-            bowling_stats['O'] = (bowling_stats['Total_Balls'] // 6).astype(str) + "." + (bowling_stats['Total_Balls'] % 6).astype(str)
-            bowling_stats['ECO'] = (bowling_stats['R'] / (bowling_stats['Total_Balls'] / 6)).round(2)
-            bowling_stats = bowling_stats[['bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']]
-            bowling_stats.columns = ['Bowler', 'O', 'M', 'R', 'W', 'NB', 'WD', 'ECO']
-            st.dataframe(bowling_stats.sort_values(by="W", ascending=False), use_container_width=True, hide_index=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            render_scorecard_for_team(view_team, display_df, playing_xi)
 
     with tab_dash:
         c_left, c_right = st.columns([2, 1])
