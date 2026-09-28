@@ -21,7 +21,6 @@ st.markdown(
         .f1-metric-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #8792a3; font-weight: 800; }
         .f1-metric-value { font-size: 28px; font-weight: 900; color: #ffffff; font-family: 'Courier New', monospace; }
         
-        /* F1 Pulsing Telemetry Animation */
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(225, 6, 0, 0.7); }
             70% { box-shadow: 0 0 0 10px rgba(225, 6, 0, 0); }
@@ -37,28 +36,40 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. ADVANCED CRICKET PARSER ---
+# --- 2. ADVANCED CRICKET PARSER & NAME CLEANER ---
+def clean_player_name(name):
+    # Strip random punctuation and ensure it's a realistic name length
+    name = re.sub(r'[^A-Za-z\s\-]', '', str(name)).strip()
+    # Filter out weird commentary sentences that slipped through
+    if len(name) > 22 or len(name) < 3 or " run" in name.lower() or " out" in name.lower():
+        return None
+    return name
+
 @st.cache_data
 def robust_pdf_parser(uploaded_file):
     ball_events = []
     current_over = 0.0
     
-    # 360-degree mapping for True Wagon Wheel
+    # 360-degree mapping for True Wagon Wheel Angles
     zone_mapping = {
-        "cover": {"name": "Cover", "angle": 300}, 
         "extra cover": {"name": "Extra Cover", "angle": 315}, 
-        "point": {"name": "Point", "angle": 270}, 
+        "cover": {"name": "Cover", "angle": 300}, 
         "backward point": {"name": "Point", "angle": 250},
+        "point": {"name": "Point", "angle": 270}, 
         "third man": {"name": "Third Man", "angle": 225}, 
         "fine leg": {"name": "Fine Leg", "angle": 135}, 
         "square leg": {"name": "Square Leg", "angle": 90}, 
         "mid-wicket": {"name": "Mid-Wicket", "angle": 60}, 
         "midwicket": {"name": "Mid-Wicket", "angle": 60}, 
         "mid-on": {"name": "Mid-On", "angle": 30}, 
-        "mid-off": {"name": "Mid-Off", "angle": 330}, 
+        "mid on": {"name": "Mid-On", "angle": 30}, 
         "long-on": {"name": "Long-On", "angle": 15},
+        "long on": {"name": "Long-On", "angle": 15},
+        "straight": {"name": "Straight", "angle": 0},
+        "mid-off": {"name": "Mid-Off", "angle": 330}, 
+        "mid off": {"name": "Mid-Off", "angle": 330},
         "long-off": {"name": "Long-Off", "angle": 345}, 
-        "straight": {"name": "Straight", "angle": 0}
+        "long off": {"name": "Long-Off", "angle": 345},
     }
 
     with pdfplumber.open(uploaded_file) as pdf:
@@ -78,18 +89,26 @@ def robust_pdf_parser(uploaded_file):
                 ball_match = re.search(r"^([A-Za-z\s\.\-\']+)\s+to\s+([A-Za-z\s\.\-\']+),\s+(.*)", line)
                 
                 if ball_match:
-                    bowler, batter, desc = ball_match.groups()
-                    desc_lower = desc.lower()
+                    raw_bowler, raw_batter, desc = ball_match.groups()
                     
+                    bowler = clean_player_name(raw_bowler)
+                    batter = clean_player_name(raw_batter)
+                    
+                    if not bowler or not batter: 
+                        continue # Skip false positives
+                        
+                    desc_lower = desc.lower()
                     runs, is_four, is_six, is_wicket, is_extra, is_dot = 0, 0, 0, 0, 0, 0
                     zone, angle = "Unknown", None
 
+                    # Find shot direction
                     for key, mapped_data in zone_mapping.items():
                         if key in desc_lower:
                             zone = mapped_data["name"]
                             angle = mapped_data["angle"]
                             break
 
+                    # Event outcomes
                     if "4 run" in desc_lower or "four" in desc_lower:
                         is_four, runs = 1, 4
                     elif "6 run" in desc_lower or "six" in desc_lower or "maximum" in desc_lower:
@@ -103,26 +122,21 @@ def robust_pdf_parser(uploaded_file):
 
                     if not is_four and not is_six and not is_extra:
                         run_match = re.search(r"(\d+)\s+run", desc_lower)
-                        if run_match: 
-                            runs = int(run_match.group(1))
+                        if run_match: runs = int(run_match.group(1))
                             
-                    # Calculate Dot Balls
                     if runs == 0 and not is_extra and not is_wicket:
                         is_dot = 1
 
-                    # Phase Calculation (Powerplay, Middle, Death)
                     phase = "Middle Overs (11-40)"
-                    if current_over < 10.0:
-                        phase = "Powerplay (1-10)"
-                    elif current_over >= 40.0:
-                        phase = "Death Overs (41-50)"
+                    if current_over < 10.0: phase = "Powerplay (1-10)"
+                    elif current_over >= 40.0: phase = "Death Overs (41-50)"
 
                     ball_events.append({
                         "over_exact": current_over,
                         "over_num": int(current_over) if current_over > 0 else 0,
                         "phase": phase,
-                        "bowler": bowler.strip(),
-                        "batter": batter.strip(),
+                        "bowler": bowler,
+                        "batter": batter,
                         "runs": runs,
                         "4s": is_four,
                         "6s": is_six,
@@ -136,7 +150,47 @@ def robust_pdf_parser(uploaded_file):
                     
     return pd.DataFrame(ball_events)
 
-# --- 3. DASHBOARD UI ---
+# --- 3. WAGON WHEEL GENERATOR ---
+def draw_wagon_wheel(df_boundaries, title):
+    fig = go.Figure()
+    
+    # Draw ropes from middle to boundary for each shot
+    for idx, row in df_boundaries.iterrows():
+        run_val = row['runs']
+        angle = row['angle']
+        color = '#e10600' if run_val == 6 else '#f59e0b'
+        name = 'SIX' if run_val == 6 else 'FOUR'
+        
+        fig.add_trace(go.Scatterpolar(
+            r=[0, run_val], # Line from center (0) to distance (4 or 6)
+            theta=[angle, angle],
+            mode='lines+markers',
+            line=dict(color=color, width=3),
+            marker=dict(color=color, size=[0, 8]), # Marker only at the end of the rope
+            name=name,
+            hoverinfo="text",
+            text=[None, f"{row['batter']} hit {name} to {row['zone']}"]
+        ))
+        
+    fig.update_layout(
+        title=dict(text=title, font=dict(color="white", size=16)),
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 6.5], showticklabels=False, gridcolor="#2d3748"), 
+            angularaxis=dict(
+                direction="clockwise", rotation=0, tickmode="array", 
+                tickvals=[0, 45, 90, 135, 180, 225, 270, 315], 
+                ticktext=["Straight", "Mid-Wicket", "Square Leg", "Fine Leg", "Keeper", "Third Man", "Point", "Cover"],
+                gridcolor="#2d3748", linecolor="#2d3748"
+            ),
+            bgcolor="#15181e"
+        ), 
+        showlegend=False, template="plotly_dark", margin=dict(t=50, b=40, l=40, r=40),
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
+
+
+# --- 4. DASHBOARD UI ---
 st.sidebar.markdown("### 🛑 MATCH CONTROL")
 uploaded_pdf = st.sidebar.file_uploader("Upload Match PDF", type=["pdf"])
 
@@ -162,11 +216,9 @@ if uploaded_pdf is not None:
         c2.markdown(f'<div class="f1-card"><div class="f1-metric-title">Run Rate</div><div class="f1-metric-value">{current_rr:.2f}</div></div>', unsafe_allow_html=True)
         c3.markdown(f'<div class="f1-card"><div class="f1-metric-title">Overs</div><div class="f1-metric-value">{(total_balls // 6) + (total_balls % 6)/10}</div></div>', unsafe_allow_html=True)
         c4.markdown(f'<div class="f1-card"><div class="f1-metric-title">Boundaries</div><div class="f1-metric-value">{df["4s"].sum()} <span style="font-size:14px;color:#8792a3;">(4s)</span> | {df["6s"].sum()} <span style="font-size:14px;color:#8792a3;">(6s)</span></div></div>', unsafe_allow_html=True)
-        
-        dot_pct = (df["dot"].sum() / len(df)) * 100
-        c5.markdown(f'<div class="f1-card"><div class="f1-metric-title">Dot Ball %</div><div class="f1-metric-value">{dot_pct:.1f}%</div></div>', unsafe_allow_html=True)
+        c5.markdown(f'<div class="f1-card"><div class="f1-metric-title">Dot Ball %</div><div class="f1-metric-value">{((df["dot"].sum() / len(df)) * 100):.1f}%</div></div>', unsafe_allow_html=True)
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Advanced Scorecards", "📈 Match Visuals (Worm & Manhattan)", "🎡 Spatial Wagon Wheel", "👤 Player Profiles"])
+        tab1, tab2, tab3 = st.tabs(["📊 Scorecards", "📈 Match Visuals", "👤 Player Deep-Dive"])
 
         with tab1:
             st.subheader("🏏 Batting Analytics")
@@ -174,11 +226,7 @@ if uploaded_pdf is not None:
                 Runs=("runs", "sum"), Balls=("runs", "count"), Fours=("4s", "sum"), Sixes=("6s", "sum"), Dots=("dot", "sum")
             ).reset_index().sort_values(by="Runs", ascending=False)
             batting['Strike Rate'] = ((batting['Runs'] / batting['Balls']) * 100).round(2)
-            batting['Boundary %'] = (((batting['Fours']*4 + batting['Sixes']*6) / batting['Runs']) * 100).round(1).fillna(0)
-            batting['Dot %'] = ((batting['Dots'] / batting['Balls']) * 100).round(1)
-            st.dataframe(batting[['batter', 'Runs', 'Balls', 'Strike Rate', 'Fours', 'Sixes', 'Boundary %', 'Dot %']], use_container_width=True, hide_index=True)
-            
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.dataframe(batting[['batter', 'Runs', 'Balls', 'Strike Rate', 'Fours', 'Sixes', 'Dots']], use_container_width=True, hide_index=True)
             
             st.subheader("🎯 Bowling Analytics")
             bowling = df.groupby("bowler").agg(
@@ -186,73 +234,40 @@ if uploaded_pdf is not None:
             ).reset_index().sort_values(by="Wickets", ascending=False)
             bowling['Overs'] = (bowling['Balls'] // 6) + (bowling['Balls'] % 6) / 10
             bowling['Economy'] = (bowling['Conceded'] / (bowling['Balls'] / 6)).round(2)
-            bowling['Strike Rate'] = (bowling['Balls'] / bowling['Wickets']).round(1).replace(float('inf'), '-')
-            st.dataframe(bowling[['bowler', 'Overs', 'Conceded', 'Wickets', 'Economy', 'Strike Rate', 'Dots']], use_container_width=True, hide_index=True)
+            st.dataframe(bowling[['bowler', 'Overs', 'Conceded', 'Wickets', 'Economy', 'Dots']], use_container_width=True, hide_index=True)
 
         with tab2:
             col_a, col_b = st.columns(2)
             with col_a:
                 st.subheader("📈 The Worm (Cumulative Runs)")
                 fig_worm = px.line(df, x="over_exact", y="cumulative_runs", template="plotly_dark", color_discrete_sequence=['#e10600'])
-                wickets_df = df[df['wicket'] == 1]
-                if not wickets_df.empty:
-                    fig_worm.add_trace(go.Scatter(x=wickets_df['over_exact'], y=wickets_df['cumulative_runs'], mode='markers', marker=dict(color='white', size=10, symbol='x'), name='Fall of Wicket'))
-                fig_worm.update_layout(xaxis_title="Overs", yaxis_title="Runs")
                 st.plotly_chart(fig_worm, use_container_width=True)
                 
             with col_b:
-                st.subheader("🏙️ Manhattan (Runs per Over)")
-                manhattan = df.groupby('over_num')['runs'].sum().reset_index()
-                fig_man = px.bar(manhattan, x='over_num', y='runs', template="plotly_dark", color_discrete_sequence=['#e10600'])
-                fig_man.update_layout(xaxis_title="Over", yaxis_title="Runs Scored")
-                st.plotly_chart(fig_man, use_container_width=True)
-                
-            st.subheader("⏱️ Phase-wise Analysis")
-            phase_stats = df.groupby("phase").agg(Runs=("runs", "sum"), Wickets=("wicket", "sum"), Balls=("runs", "count")).reset_index()
-            phase_stats['Run Rate'] = (phase_stats['Runs'] / (phase_stats['Balls'] / 6)).round(2)
-            fig_phase = px.bar(phase_stats, x="phase", y="Runs", text="Run Rate", template="plotly_dark", color_discrete_sequence=['#3182ce'], title="Runs by Match Phase (Text = Run Rate)")
-            st.plotly_chart(fig_phase, use_container_width=True)
+                st.subheader("🎡 True Wagon Wheel (Match)")
+                boundaries_df = df[(df['4s'] == 1) | (df['6s'] == 1)].dropna(subset=['angle'])
+                if not boundaries_df.empty:
+                    fig_ww = draw_wagon_wheel(boundaries_df, "All Match Boundaries")
+                    st.plotly_chart(fig_ww, use_container_width=True)
+                else:
+                    st.info("No spatial boundary data detected.")
 
         with tab3:
-            st.subheader("🎡 True Wagon Wheel (Boundary Tracking)")
-            st.markdown("Visualizing the precise angles of 4s and 6s based on commentary zones.")
-            boundaries_df = df[(df['4s'] == 1) | (df['6s'] == 1)].dropna(subset=['angle'])
-            
-            if not boundaries_df.empty:
-                boundaries_df['Run Type'] = boundaries_df.apply(lambda x: 'SIX' if x['6s'] == 1 else 'FOUR', axis=1)
-                
-                fig_polar = px.scatter_polar(
-                    boundaries_df, r="runs", theta="angle", color="Run Type",
-                    color_discrete_map={'SIX': '#e10600', 'FOUR': '#f59e0b'},
-                    hover_name="batter", hover_data=["bowler", "over_exact"],
-                    template="plotly_dark", size="runs", size_max=15
-                )
-                fig_polar.update_layout(
-                    polar=dict(
-                        radialaxis=dict(visible=False, range=[0, 7]), 
-                        angularaxis=dict(direction="clockwise", rotation=0, tickmode="array", tickvals=[0, 45, 90, 135, 180, 225, 270, 315], ticktext=["Straight", "Mid-Wicket", "Square Leg", "Fine Leg", "Keeper", "Third Man", "Point", "Cover"])
-                    ), margin=dict(t=40, b=40, l=40, r=40)
-                )
-                st.plotly_chart(fig_polar, use_container_width=True)
-            else:
-                st.info("No spatial boundary data could be extracted for a Wagon Wheel.")
-
-        with tab4:
             st.subheader("🔍 Deep-Dive Player Analytics")
-            selected_player = st.selectbox("Select Batter or Bowler:", sorted(list(set(df["batter"]).union(set(df["bowler"])))))
+            
+            # Clean list of Playing XI only
+            valid_players = sorted(list(set(df["batter"]).union(set(df["bowler"]))))
+            selected_player = st.selectbox("Select Player from Playing XI:", valid_players)
             
             if selected_player:
                 p_bat = df[df["batter"] == selected_player]
                 if not p_bat.empty:
-                    st.markdown(f"**{selected_player}'s Boundary Wagon Wheel**")
                     p_bdry = p_bat[(p_bat['4s'] == 1) | (p_bat['6s'] == 1)].dropna(subset=['angle'])
                     if not p_bdry.empty:
-                        p_bdry['Run Type'] = p_bdry.apply(lambda x: 'SIX' if x['6s'] == 1 else 'FOUR', axis=1)
-                        fig_p = px.scatter_polar(p_bdry, r="runs", theta="angle", color="Run Type", color_discrete_map={'SIX': '#e10600', 'FOUR': '#f59e0b'}, template="plotly_dark", size="runs", size_max=15)
-                        fig_p.update_layout(polar=dict(radialaxis=dict(visible=False, range=[0, 7]), angularaxis=dict(direction="clockwise", rotation=0, tickmode="array", tickvals=[0, 45, 90, 135, 180, 225, 270, 315], ticktext=["Straight", "Mid-Wicket", "Square Leg", "Fine Leg", "Keeper", "Third Man", "Point", "Cover"])))
-                        st.plotly_chart(fig_p, use_container_width=True)
+                        fig_p_ww = draw_wagon_wheel(p_bdry, f"{selected_player}'s Boundary Ropes")
+                        st.plotly_chart(fig_p_ww, use_container_width=True)
                     else:
-                        st.write("No boundaries recorded to plot.")
+                        st.write(f"No boundaries hit by {selected_player} to map.")
                 
-                st.markdown("**Ball-by-Ball Match Log**")
+                st.markdown(f"**Ball-by-Ball Involvement ({selected_player})**")
                 st.dataframe(df[(df["batter"] == selected_player) | (df["bowler"] == selected_player)][["over_exact", "phase", "description", "runs", "wicket", "dot"]].sort_values(by="over_exact"), use_container_width=True, hide_index=True)
