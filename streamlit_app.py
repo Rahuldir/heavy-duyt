@@ -1,8 +1,6 @@
 import re
 import pandas as pd
 import pdfplumber
-import requests
-from bs4 import BeautifulSoup
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
@@ -39,7 +37,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. PARSER ENGINE (WITH STRICT CHRONOLOGICAL SORTING) ---
+# --- 2. PARSER ENGINE ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -157,7 +155,6 @@ def process_lines(all_lines):
                     
     df = pd.DataFrame(ball_events)
     if not df.empty:
-        # FIX: Sort ascending to ensure true chronological order per team innings
         df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
     return df, match_title, playing_xi, team_names
 
@@ -168,16 +165,6 @@ def parse_pdf(uploaded_file):
         for page in pdf.pages:
             text = page.extract_text()
             if text: all_lines.extend([line.strip() for line in text.split("\n") if line.strip()])
-    return process_lines(all_lines)
-
-@st.cache_data
-def parse_url(url):
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    resp = requests.get(url, headers=headers)
-    if resp.status_code != 200:
-        return pd.DataFrame(), "Failed to fetch URL", {}, []
-    soup = BeautifulSoup(resp.content, 'html.parser')
-    all_lines = [el.text.strip() for el in soup.find_all(True) if el.text.strip()]
     return process_lines(all_lines)
 
 def calculate_partnerships(df):
@@ -247,15 +234,15 @@ def draw_zone_wagon_wheel(df):
 # --- 4. DASHBOARD UI ---
 st.sidebar.markdown("### 📥 INGEST MATCH DATA")
 uploaded_pdf = st.sidebar.file_uploader("Upload Match PDF", type=["pdf"])
-match_url = st.sidebar.text_input("Or Paste Cricbuzz URL:")
+raw_text_input = st.sidebar.text_area("Or Paste Raw Commentary Text:")
 
 df, match_title, playing_xi, team_names = pd.DataFrame(), "", {}, []
 
 if uploaded_pdf is not None:
     df, match_title, playing_xi, team_names = parse_pdf(uploaded_pdf)
-elif match_url:
-    with st.spinner("SCRAPING MATCH URL..."):
-        df, match_title, playing_xi, team_names = parse_url(match_url)
+elif raw_text_input:
+    lines = [l.strip() for l in raw_text_input.split("\n") if l.strip()]
+    df, match_title, playing_xi, team_names = process_lines(lines)
 
 if not df.empty:
     st.markdown(f"### {match_title}")
@@ -389,4 +376,4 @@ if not df.empty:
             st.info("Playing XI data could not be extracted from this source.")
         st.markdown('</div>', unsafe_allow_html=True)
 else:
-    st.info("Awaiting Match PDF upload or URL input...")
+    st.info("Awaiting Match PDF upload or Raw Text input...")
