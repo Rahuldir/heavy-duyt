@@ -37,7 +37,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 2. PARSER ENGINE ---
+# --- 2. FOOLPROOF PARSER ENGINE ---
 def clean_name(name):
     name = re.sub(r'\(.*?\)', '', str(name))
     clean = re.sub(r'[^A-Za-z\s\-]', '', name).strip()
@@ -78,10 +78,17 @@ def process_lines(all_lines):
         "mid-off": {"name": "Mid-Off", "angle": 330}, "long-off": {"name": "Long-Off", "angle": 345}
     }
 
+    noise_keywords = ['reserved', 'times of india', 'navbharat', 'ask ai', 'platforms', 'cookie', 'privacy', 'subscribe']
+
     for line in all_lines:
+        # Ignore website boilerplate/ads
+        if any(noise in line.lower() for noise in noise_keywords):
+            continue
+
         over_match = re.match(r"^(\d{1,2}\.\d{1,2})$", line)
         if over_match:
             new_over = float(over_match.group(1))
+            if new_over > 50.0: continue # Cap at 50 overs
             if last_over != -1.0 and new_over > last_over + 10.0:
                 current_inning_id += 1
             current_over = new_over
@@ -156,6 +163,9 @@ def process_lines(all_lines):
     df = pd.DataFrame(ball_events)
     if not df.empty:
         df = df.sort_values(['team', 'over_exact'], ascending=[True, True]).reset_index(drop=True)
+        # Strict cap: Max 10 wickets per innings
+        df['cumulative_wickets'] = df.groupby('team')['wicket'].cumsum()
+        df = df[df['cumulative_wickets'] <= 10]
     return df, match_title, playing_xi, team_names
 
 @st.cache_data
