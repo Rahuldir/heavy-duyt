@@ -72,6 +72,7 @@ def robust_pdf_parser(uploaded_file):
 
     raw_ball_events = []
     current_over = -1.0
+    last_over = -1.0
     current_inning_id = 1
     
     zone_mapping = {
@@ -88,9 +89,10 @@ def robust_pdf_parser(uploaded_file):
         over_match = re.match(r"^(\d{1,2}\.\d{1,2})$", line)
         if over_match:
             new_over = float(over_match.group(1))
-            if current_over != -1.0 and new_over > current_over + 10.0:
+            if last_over != -1.0 and new_over > last_over + 10.0:
                 current_inning_id += 1
             current_over = new_over
+            last_over = new_over
             continue
             
         ball_match = re.search(r"^([A-Z][A-Za-z\s\.\-\']+)\s+to\s+([A-Z][A-Za-z\s\.\-\']+),\s+(.*)", line)
@@ -98,7 +100,8 @@ def robust_pdf_parser(uploaded_file):
             raw_bowler, raw_batter, desc = ball_match.groups()
             outcome_segment = desc.lower().split(',')[0].strip()
             
-            if not any(k in outcome_segment for k in ['run', 'four', 'six', 'maximum', 'out', 'wide', 'no ball', 'bye']):
+            valid_outcomes = ['run', 'runs', 'four', 'six', 'maximum', 'out', 'wide', 'no ball', 'bye', 'byes']
+            if not any(k in outcome_segment for k in valid_outcomes):
                 continue
                 
             bowler, batter = clean_name(raw_bowler), clean_name(raw_batter)
@@ -153,7 +156,6 @@ def robust_pdf_parser(uploaded_file):
             idx = inn - 1
             inning_teams[inn] = team_names[idx] if idx < len(team_names) else f"Team {inn}"
 
-    # Finalize DataFrame
     ball_events = []
     for b in raw_ball_events:
         b['team'] = inning_teams[b['inning_id']]
@@ -247,7 +249,7 @@ if uploaded_pdf is not None:
         col1.markdown(f'<div class="metric-box"><div class="metric-title">Score</div><div class="metric-value">{total_r}/{display_df["wicket"].sum()}</div></div>', unsafe_allow_html=True)
         col2.markdown(f'<div class="metric-box"><div class="metric-title">Overs</div><div class="metric-value">{(total_b // 6) + (total_b % 6)/10}</div></div>', unsafe_allow_html=True)
         col3.markdown(f'<div class="metric-box"><div class="metric-title">Run Rate</div><div class="metric-value">{((total_r / (total_b / 6)) if total_b > 0 else 0):.2f}</div></div>', unsafe_allow_html=True)
-        col4.markdown(f'<div class="metric-box"><div class="metric-title">Boundaries</div><div class="metric-value">{display_df[display_df["runs"]==4].shape[0]} <span style="font-size:14px;color:#9ca3af;">(4s)</span> | {display_df[display_df["runs"]==6].shape[0]} <span style="font-size:14px;color:#9ca3af;">(6s)</span></div></div>', unsafe_allow_html=True)
+        col4.markdown(f'<div class="metric-box"><div class="metric-title">Boundaries</div><div class="metric-value">{display_df[display_df["4s"]==1].shape[0]} <span style="font-size:14px;color:#9ca3af;">(4s)</span> | {display_df[display_df["6s"]==1].shape[0]} <span style="font-size:14px;color:#9ca3af;">(6s)</span></div></div>', unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
